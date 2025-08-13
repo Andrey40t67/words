@@ -2,194 +2,463 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Holistic 3D — лицо • тело • руки | идеальные призрачные модели</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>IMBA 3D Tracker — лицо • тело • руки</title>
+
+  <!-- Three.js (UMD) -->
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js" crossorigin="anonymous"></script>
+
+  <!-- MediaPipe Tasks Vision (UMD bundle exposes global classes) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js" crossorigin="anonymous"></script>
+
   <style>
     :root{
-      --bg1:#06080f; --bg2:#0f1427; --ink:#eaf2ff; --muted:#96a3c2;
-      --glass: rgba(255,255,255,.08); --border: rgba(255,255,255,.16);
-      --a1:#8ad1ff; --a2:#ff9aa2; --a3:#b28cff; --good:#7CFC00; --warn:#ffb74d; --bad:#ff6b6b;
+      --bg1:#0b0f1a; --bg2:#101a2e; --glass:rgba(255,255,255,.06);
+      --acc:#6cf0ff; --acc2:#9f80ff; --ok:#66ffb2; --warn:#ffda6c;
     }
     *{box-sizing:border-box}
     html,body{height:100%}
-    body{margin:0;color:var(--ink);font:14px/1.35 Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;overflow:hidden;}
-    /* Анимированный фон */
-    body:before{content:"";position:fixed;inset:-20%;z-index:-1;filter:blur(60px);background:radial-gradient(1200px 800px at 80% -10%, var(--bg2), var(--bg1));animation:bgflow 16s ease-in-out infinite alternate}
-    @keyframes bgflow{0%{transform:translateX(-2%) translateY(-1%)}100%{transform:translateX(2%) translateY(1%)}}
-    /* Сканлайны и сетка для глубины */
-    body:after{content:"";position:fixed;inset:0;pointer-events:none;background:repeating-linear-gradient(180deg,rgba(255,255,255,.025),rgba(255,255,255,.025) 1px,transparent 2px),linear-gradient(90deg,transparent 24%,rgba(255,255,255,.06) 25%,rgba(255,255,255,.06) 26%,transparent 27%,transparent 74%,rgba(255,255,255,.06) 75%,rgba(255,255,255,.06) 76%,transparent 77%);background-size:auto,32px 32px}
-
-    #stage{position:absolute;inset:0;overflow:hidden}
-    #gl{position:absolute;inset:0;display:block;pointer-events:none}
-
-    /* UI */
-    #ui{position:fixed;left:14px;bottom:14px;right:14px;z-index:10;display:grid;gap:10px;grid-template-columns:repeat(12,1fr)}
-    .card{grid-column:1/-1;background:var(--glass);border:1px solid var(--border);border-radius:18px;padding:12px 12px;backdrop-filter: blur(12px);box-shadow:0 12px 30px rgba(0,0,0,.25) inset}
-    .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-    button,.seg,select{appearance:none;border:1px solid var(--border);background:rgba(255,255,255,.10);color:#fff;padding:10px 14px;border-radius:12px;cursor:pointer;transition:transform .12s ease, background .2s}
-    button:hover{transform:translateY(-1px)}
-    button:active{transform:translateY(0)}
-    button:disabled{opacity:.55;cursor:not-allowed}
-    label{display:inline-flex;align-items:center;gap:8px;opacity:.95}
-    input[type="range"]{width:160px}
-    .status{display:inline-flex;align-items:center;gap:6px;padding:8px 10px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid var(--border)}
-    .dot{width:10px;height:10px;border-radius:999px;background:#8892b0;box-shadow:0 0 10px currentColor}
-    .ok{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}
-
-    .demo{position:fixed;top:14px;right:14px;z-index:12;padding:12px 16px;font-weight:700}
-    .demo.hit{animation:pop .28s ease}@keyframes pop{0%{transform:scale(1)}50%{transform:scale(1.08)}100%{transform:scale(1)}}
-
-    #hint{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:9;text-align:center;opacity:.95;pointer-events:none}
-    #hint h1{margin:0 0 8px;font-size:22px;letter-spacing:.2px}
-    #hint p{margin:0;font-size:13px;opacity:.9}
-
-    video#video{position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0}
-    #toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:15;max-width:80vw;background:rgba(20,24,36,.9);color:#fff;border:1px solid var(--border);padding:10px 14px;border-radius:12px;box-shadow:0 10px 24px rgba(0,0,0,.3);display:none}
-    @media (min-width:820px){.card.controls{grid-column:1/span 8}.card.status-bar{grid-column:9/-1}}
+    body{
+      margin:0; background: radial-gradient(1200px 800px at 80% -10%, #15294f 0%, transparent 70%),
+                radial-gradient(1000px 800px at -10% 110%, #231845 0%, transparent 60%),
+                linear-gradient(180deg, var(--bg1), var(--bg2));
+      color:#e7f3ff; font-family: ui-sans-serif, system-ui, Segoe UI, Roboto, Helvetica, Arial, Apple Color Emoji, Segoe UI Emoji;
+      overflow:hidden;
+    }
+    .wrap{position:fixed; inset:0; display:grid; grid-template-rows:auto 1fr; gap:10px; padding:14px}
+    header{
+      display:flex; gap:14px; align-items:center; justify-content:space-between;
+      padding:10px 14px; border:1px solid rgba(255,255,255,.08); background:var(--glass);
+      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+      border-radius:16px; box-shadow: 0 20px 60px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.07);
+      animation: drop 600ms ease both;
+    }
+    @keyframes drop{from{transform:translateY(-10px); opacity:0} to{transform:none; opacity:1}}
+    .brand{display:flex; gap:10px; align-items:center; letter-spacing:.3px}
+    .brand .dot{
+      width:10px;height:10px;border-radius:50%;
+      background: conic-gradient(from 210deg at 50% 50%, var(--acc), var(--acc2), var(--ok), var(--acc));
+      box-shadow: 0 0 20px 6px rgba(108,240,255,.35), 0 0 40px 10px rgba(159,128,255,.25);
+      animation: pulse 2200ms ease-in-out infinite;
+    }
+    @keyframes pulse{0%,100%{transform:scale(1)} 50%{transform:scale(1.25)}}
+    .brand h1{margin:0; font-size:18px; font-weight:700}
+    .controls{display:flex; flex-wrap:wrap; gap:10px}
+    .card{
+      display:flex; align-items:center; gap:10px; padding:8px 12px; background:rgba(255,255,255,.05);
+      border:1px solid rgba(255,255,255,.08); border-radius:14px;
+    }
+    .card label{font-size:13px; opacity:.9}
+    .switch{display:inline-flex; align-items:center; gap:8px; font-size:13px}
+    .switch input[type="checkbox"]{appearance:none; width:36px;height:20px;border-radius:999px; background:#3b455e; position:relative; outline:none; cursor:pointer; transition:.2s}
+    .switch input[type="checkbox"]::after{
+      content:""; position:absolute; top:2px; left:2px; width:16px;height:16px;border-radius:50%;
+      background:white; transition:.2s; box-shadow:0 2px 6px rgba(0,0,0,.4)
+    }
+    .switch input[type="checkbox"]:checked{background:linear-gradient(90deg,var(--acc),var(--acc2))}
+    .switch input[type="checkbox"]:checked::after{left:18px}
+    select, button{
+      font:inherit; color:#e7f3ff; background:#27314a; border:1px solid rgba(255,255,255,.12);
+      border-radius:12px; padding:8px 10px; cursor:pointer;
+    }
+    button.primary{
+      background:linear-gradient(90deg, #00d2ff, #7a5cff);
+      border:none; font-weight:700; letter-spacing:.2px; box-shadow:0 10px 30px rgba(122,92,255,.35);
+    }
+    button.ghost{background:transparent;border:1px dashed rgba(255,255,255,.2)}
+    #stage{position:absolute; inset:0; width:100%; height:100%}
+    .foot{
+      position:fixed; bottom:10px; left:50%; transform:translateX(-50%);
+      padding:6px 10px; font-size:12px; opacity:.75; background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.1); border-radius:12px
+    }
+    /* Hidden video feed (camera never shown) */
+    video#cam{position:fixed; opacity:0; pointer-events:none; width:1px; height:1px; left:-9999px; top:-9999px}
+    .badge{padding:6px 10px; border-radius:999px; font-size:12px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12)}
+    .ok{color:#031; background: linear-gradient(90deg, rgba(102,255,178,.2), rgba(108,240,255,.18))}
+    .warn{color:#2d1f00; background: linear-gradient(90deg, rgba(255,218,108,.25), rgba(255,170,83,.18))}
   </style>
 </head>
 <body>
-  <div id="stage">
-    <canvas id="gl"></canvas>
-  </div>
-
-  <button id="demoBtn" class="demo hittable" title="Правая рука: щипок — клик / удержание — drag / двойной щипок — двойной клик">Жми рукой</button>
-
-  <div id="ui">
-    <div class="card controls">
-      <div class="row">
-        <button id="startBtn">▶️ Камера</button>
-        <button id="stopBtn" disabled>⏹ Стоп</button>
-        <div class="seg" id="visSeg">
-          <label><input type="checkbox" id="faceChk" checked> Лицо</label>
-          <label><input type="checkbox" id="poseChk" checked> Тело</label>
-          <label><input type="checkbox" id="handsChk" checked> Руки</label>
-        </div>
-        <label><input id="mirrorChk" type="checkbox" checked> Зеркалить</label>
-        <label>Стабилизация <input id="smoothRange" type="range" min="0" max="0.95" step="0.05" value="0.55"></label>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <div class="dot"></div>
+        <h1>IMBA 3D Tracker</h1>
+        <span id="status" class="badge warn">ожидание старта</span>
       </div>
-      <div class="row" style="opacity:.9"><div>Видео не показывается. На сцене — идеальные «призрачные» модели: face(468), pose(33), hands(21×2). Анимации плавные, стеклянный UI.</div></div>
-    </div>
-    <div class="card status-bar"><div class="row"><div class="status" id="permSt"><span class="dot"></span><span>Камера</span></div><div class="status" id="modelSt"><span class="dot"></span><span id="mdlTxt">Модели</span></div><div class="status" id="fpsSt"><span class="dot"></span><span id="fpsTxt">FPS — …</span></div></div></div>
+      <div class="controls">
+        <div class="card">
+          <div class="switch"><input id="chkFace" type="checkbox" checked><label for="chkFace">Лицо</label></div>
+          <div class="switch"><input id="chkBody" type="checkbox" checked><label for="chkBody">Тело</label></div>
+          <div class="switch"><input id="chkHands" type="checkbox" checked><label for="chkHands">Руки</label></div>
+        </div>
+
+        <div class="card">
+          <label for="selStyle">Стиль</label>
+          <select id="selStyle">
+            <option value="points" selected>Точки (неон)</option>
+            <option value="pointsGlow">Точки + свечение</option>
+          </select>
+        </div>
+
+        <div class="card">
+          <label for="selQuality">Качество</label>
+          <select id="selQuality" title="Pose: lite/full, остальные — универсальные">
+            <option value="lite" selected>Lite (быстрее)</option>
+            <option value="full">Full (точнее)</option>
+          </select>
+        </div>
+
+        <div class="card">
+          <button id="btnStart" class="primary">START</button>
+          <button id="btnStop" class="ghost">STOP</button>
+        </div>
+      </div>
+    </header>
+
+    <main style="position:relative; min-height:0;">
+      <canvas id="stage"></canvas>
+      <video id="cam" playsinline muted autoplay></video>
+    </main>
   </div>
 
-  <div id="hint"><h1>Дай доступ к камере и поднеси лицо/тело/руки в кадр</h1><p>Если уже разрешил, а трекинг не идёт — жди модель, она грузится отдельно (индикатор «Модели»).</p></div>
+  <div class="foot" id="foot">FPS: — • Face/Body/Hands: —/—/—</div>
 
-  <div id="toast"></div>
-  <video id="video" playsinline muted></video>
+<script>
+(() => {
+  // ======= Globals / State =======
+  const video = document.getElementById('cam');
+  const canvas = document.getElementById('stage');
+  const statusBadge = document.getElementById('status');
+  const foot = document.getElementById('foot');
 
-  <script type="module">
-  (async () => {
-    // ✅ Модульные импорты — никаких гонок и «uninitialized variable»
-    const THREE = await import('https://unpkg.com/three@0.160.0/build/three.module.js');
-    const vision = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.mjs');
-    const { FilesetResolver, FaceLandmarker, PoseLandmarker, HandLandmarker } = vision;
+  const ui = {
+    start: document.getElementById('btnStart'),
+    stop: document.getElementById('btnStop'),
+    face: document.getElementById('chkFace'),
+    body: document.getElementById('chkBody'),
+    hands: document.getElementById('chkHands'),
+    style: document.getElementById('selStyle'),
+    quality: document.getElementById('selQuality')
+  };
 
-    // --- UI ---
-    const $=s=>document.querySelector(s);
-    const startBtn=$('#startBtn'), stopBtn=$('#stopBtn');
-    const faceChk=$('#faceChk'), poseChk=$('#poseChk'), handsChk=$('#handsChk');
-    const mirrorChk=$('#mirrorChk'), smoothRange=$('#smoothRange');
-    const permSt=$('#permSt'), modelSt=$('#modelSt'), mdlTxt=$('#mdlTxt'), fpsTxt=$('#fpsTxt'), fpsSt=$('#fpsSt'), hint=$('#hint');
-    const toast=$('#toast');
-    const setDot=(el,cls)=>{ el.querySelector('.dot').className='dot '+({ok:'ok',warn:'warn',bad:'bad'}[cls]||''); };
-    const showToast=(msg)=>{ toast.textContent=msg; toast.style.display='block'; setTimeout(()=>toast.style.display='none', 2600); };
+  // MediaPipe tasks
+  let vision = null;
+  let faceLm = null, poseLm = null, handLm = null;
 
-    // --- Camera ---
-    const video=$('#video'); let stream=null, running=false;
-    async function startCamera(){
-      setDot(permSt,'warn');
-      try{
-        stream=await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'user', width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30,max:60} }, audio:false });
-      }catch(e){ setDot(permSt,'bad'); showToast('Камера заблокирована или без HTTPS'); return; }
-      video.srcObject=stream;
-      try{ await video.play(); }catch(e){ /* Safari может ругнуться, но готовый поток есть */ }
-      const live = stream.getVideoTracks()[0]?.readyState==='live'; setDot(permSt, live ? 'ok' : 'warn');
-      running=true; startBtn.disabled=true; stopBtn.disabled=false; hint.style.display='none';
-      startLoop();
+  // Three.js scene
+  let renderer, scene, camera, facePts, posePts, leftPts, rightPts;
+  let lastT = performance.now(), frames = 0, fps = 0;
+
+  // Geometry buffers (reused for smoothness & perf)
+  let buf = {
+    face: new Float32Array(468*3),
+    pose: new Float32Array(33*3),
+    left: new Float32Array(21*3),
+    right: new Float32Array(21*3)
+  };
+  let smooth = {
+    face: new Float32Array(buf.face.length),
+    pose: new Float32Array(buf.pose.length),
+    left: new Float32Array(buf.left.length),
+    right: new Float32Array(buf.right.length)
+  };
+
+  // Utility mapping normalized landmark -> 3D coords
+  function lmToXYZ(lm, out, off=0, lerp=0.35){
+    // x,y in [0..1], z ~ [-? .. ?]; map to -1..1, flip Y
+    const X = (lm.x*2 - 1);
+    const Y = (1 - lm.y*2);
+    const Z = -(lm.z || 0)*1.2; // keep shallow depth
+    // Lerp towards new value to reduce jitter
+    out[off+0] = out[off+0] + (X - out[off+0]) * lerp || X;
+    out[off+1] = out[off+1] + (Y - out[off+1]) * lerp || Y;
+    out[off+2] = out[off+2] + (Z - out[off+2]) * lerp || Z;
+  }
+
+  // Create THREE.Points with nice neon material
+  function makePoints(capacity, baseSize=0.02, glow=false){
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(capacity*3), 3));
+    const m = new THREE.PointsMaterial({
+      size: baseSize,
+      transparent:true,
+      opacity: glow ? 0.95 : 0.9,
+      depthWrite:false
+    });
+    // Gradient via vertex colors
+    const colors = new Float32Array(capacity*3);
+    for (let i=0;i<capacity;i++){
+      const t = i/capacity;
+      const c = new THREE.Color().setHSL(0.55 + 0.25*t, 0.9, glow ? (0.6 + 0.3*(1-t)) : 0.55);
+      colors[i*3+0]=c.r; colors[i*3+1]=c.g; colors[i*3+2]=c.b;
     }
-    function stopCamera(){ running=false; if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } video.srcObject=null; startBtn.disabled=false; stopBtn.disabled=true; }
-    startBtn.onclick=startCamera; stopBtn.onclick=stopCamera;
+    g.setAttribute('color', new THREE.BufferAttribute(colors,3));
+    const mat = m;
+    mat.vertexColors = true;
+    const pts = new THREE.Points(g, mat);
+    if (glow){
+      pts.layers.enable(1);
+      pts.material.blending = THREE.AdditiveBlending;
+    }
+    return pts;
+  }
 
-    // --- Three.js ---
-    const glCanvas=$('#gl');
-    const renderer=new THREE.WebGLRenderer({canvas:glCanvas, antialias:true, alpha:true, powerPreference:'high-performance'});
-    const scene=new THREE.Scene();
-    const cam=new THREE.OrthographicCamera();
-    const hemi=new THREE.HemisphereLight(0xffffff,0x181a26,1.0); scene.add(hemi);
-    const dir=new THREE.DirectionalLight(0xffffff,0.9); dir.position.set(0.3,0.6,1.2); scene.add(dir);
-    function resize(){ const w=glCanvas.clientWidth=innerWidth, h=glCanvas.clientHeight=innerHeight; renderer.setSize(w,h,false); renderer.setPixelRatio(Math.min(devicePixelRatio||1,2)); cam.left=-w/2; cam.right=w/2; cam.top=h/2; cam.bottom=-h/2; cam.near=-3000; cam.far=3000; cam.updateProjectionMatrix(); }
-    window.addEventListener('resize', resize); resize(); renderer.setClearColor(0x000000,0);
+  function applyStyle(){
+    const glow = ui.style.value === 'pointsGlow';
+    const sFace = facePts?.material; const sPose = posePts?.material;
+    const sL = leftPts?.material; const sR = rightPts?.material;
+    [sFace,sPose,sL,sR].forEach(m=>{
+      if(!m) return;
+      m.blending = glow ? THREE.AdditiveBlending : THREE.NormalBlending;
+      m.opacity = glow ? 0.95 : 0.9;
+      m.needsUpdate = true;
+    });
+    renderer.toneMappingExposure = glow ? 1.35 : 1.0;
+  }
 
-    // --- Materials ---
-    function ghostMat(color){ return new THREE.ShaderMaterial({ transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide, uniforms:{ uColor:{value:new THREE.Color(color)}, uAlpha:{value:0.0}, uTime:{value:0} }, vertexShader:`uniform float uTime; varying vec3 vN; varying vec3 vW; void main(){ vN=normalize(normalMatrix*normal); vec4 wPos=modelMatrix*vec4(position,1.0); wPos.xyz+=normal*0.6*sin(uTime*0.7); vW=wPos.xyz; gl_Position=projectionMatrix*viewMatrix*wPos; }`, fragmentShader:`varying vec3 vN; varying vec3 vW; uniform vec3 uColor; uniform float uAlpha; void main(){ vec3 V=normalize(cameraPosition - vW); float fres=pow(1.0 - max(dot(normalize(vN), V), 0.0), 2.0); float glow=smoothstep(0.0,1.0,fres); vec3 col=uColor*(0.35+0.9*glow); float a=clamp(0.16+0.75*glow,0.0,1.0)*uAlpha; if(a<0.02) discard; gl_FragColor=vec4(col,a);} `}); }
+  // ======= Init Three.js =======
+  function initThree(){
+    renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-    // --- Groups ---
-    // Face points
-    const faceGroup=new THREE.Group(); scene.add(faceGroup); faceGroup.userData={alpha:0};
-    const faceGeom=new THREE.BufferGeometry(); faceGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(468*3),3));
-    const facePts=new THREE.Points(faceGeom, new THREE.PointsMaterial({ color:0xffffff, size:6, sizeAttenuation:false, transparent:true, opacity:0.9 })); faceGroup.add(facePts);
+    scene = new THREE.Scene();
 
-    // Pose: capsules along bones + joints spheres
-    const poseGroup=new THREE.Group(); scene.add(poseGroup); poseGroup.userData={alpha:0};
-    const BONES=[[11,13],[13,15],[12,14],[14,16],[11,12],[12,24],[11,23],[23,24],[23,25],[25,27],[24,26],[26,28],[11,23],[12,24],[23,27],[24,28]];
-    const poseMat=ghostMat(0xbbe1ff); const jointMat=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.35});
-    const boneMeshes=BONES.map(_=>new THREE.Mesh(new THREE.CapsuleGeometry(10,2,6,10), poseMat)); boneMeshes.forEach(m=>poseGroup.add(m));
-    const jointMeshes=[...Array(33)].map(_=>new THREE.Mesh(new THREE.SphereGeometry(9,16,12), jointMat)); jointMeshes.forEach(m=>poseGroup.add(m));
+    camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 50);
+    camera.position.set(0, 0, 3.2);
+    scene.add(camera);
 
-    // Hands: two ghost hands
-    const HAND_CONN=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20]];
-    function makeHand(color){ const g=new THREE.Group(); const mat=ghostMat(color); const joint=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.35}); const cyl=[], sph=[]; for(let i=0;i<HAND_CONN.length;i++){ const m=new THREE.Mesh(new THREE.CapsuleGeometry(7,1,6,10), mat); g.add(m); cyl.push(m);} for(let i=0;i<21;i++){ const s=new THREE.Mesh(new THREE.SphereGeometry(8,16,12), joint); g.add(s); sph.push(s);} g.userData={cyl,sph,mat}; return g; }
-    const handsGroup=new THREE.Group(); scene.add(handsGroup); handsGroup.userData={alpha:0};
-    const leftHand=makeHand(0x8ad1ff), rightHand=makeHand(0xff9aa2); handsGroup.add(leftHand,rightHand);
+    const amb = new THREE.AmbientLight(0x9fd1ff, 0.75);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.6); dir.position.set(1,2,3);
+    scene.add(amb, dir);
 
-    function fade(g,target){ g.userData.alpha += (target - g.userData.alpha)*0.25; const a=g.userData.alpha; if(g===faceGroup){ facePts.material.opacity = 0.2 + 0.8*a; } if(g===poseGroup){ poseMat.uniforms.uAlpha.value=a; jointMat.opacity=0.15+0.2*a; } if(g===handsGroup){ [leftHand,rightHand].forEach(h=>{ h.userData.mat.uniforms.uAlpha.value=a; }); } g.visible = a>0.02; }
+    // Particles groups
+    facePts = makePoints(468, 0.016, true);
+    posePts = makePoints(33, 0.024, false);
+    leftPts = makePoints(21, 0.022, true);
+    rightPts = makePoints(21, 0.022, true);
 
-    // --- Helpers ---
-    function normToScreen(x,y){ const w=innerWidth,h=innerHeight; const mx = mirrorChk.checked ? (1-x) : x; return [mx*w, y*h]; }
-    const lerp=(a,b,t)=>a+(b-a)*t; const sp=(p,n,a)=>!p?{...n}:{x:lerp(p.x,n.x,a),y:lerp(p.y,n.y,a),z:lerp(p.z,n.z,a)};
+    scene.add(facePts, posePts, leftPts, rightPts);
 
-    // --- Models init (ALL-SETTLED, надёжно) ---
-    setDot(modelSt,'warn'); mdlTxt.textContent='Модели — загружаются…';
-    const fileset=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm');
-    let faceLm=null, poseLm=null, handLm=null;
+    applyStyle();
+
+    window.addEventListener('resize', ()=>{
+      camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+  }
+
+  // ======= Init MediaPipe Tasks =======
+  async function initTasks(){
+    // wasm base path on jsDelivr (SIMD auto handled by FilesetResolver)
+    vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm");
+
+    // Face Landmarker (478 pts inc. some indices unused; API returns 468 landmarks)
+    faceLm = await FaceLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task",
+        delegate: "GPU"
+      },
+      runningMode: "VIDEO",
+      numFaces: 1,
+      outputFaceBlendshapes: false,
+      outputFacialTransformationMatrixes: false,
+      minTrackingConfidence: 0.6
+    });
+
+    // Pose Landmarker (quality from UI)
+    await createPoseByQuality(ui.quality.value);
+
+    // Hand Landmarker
+    handLm = await HandLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task",
+        delegate: "GPU"
+      },
+      runningMode: "VIDEO",
+      numHands: 2,
+      minTrackingConfidence: 0.6
+    });
+  }
+
+  async function createPoseByQuality(q){
+    if (poseLm){ poseLm.close(); poseLm = null; }
+    const modelURL = q === 'full'
+      ? "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task"
+      : "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task";
+    poseLm = await PoseLandmarker.createFromOptions(vision, {
+      baseOptions: { modelAssetPath: modelURL, delegate: "GPU" },
+      runningMode: "VIDEO",
+      outputSegmentationMasks: false,
+      minTrackingConfidence: 0.6
+    });
+  }
+
+  // ======= Camera =======
+  async function startCamera(){
+    // iOS/Safari safe constraints
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: "user",
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 30, max: 60 }
+      },
+      audio: false
+    });
+    video.srcObject = stream;
+    await video.play(); // must be after user gesture
+  }
+
+  // ======= Render / Detection Loop =======
+  let running = false;
+
+  async function loop(){
+    if (!running) return;
+    const now = performance.now();
+
+    // FPS
+    frames++;
+    if (now - lastT >= 1000){ fps = frames; frames = 0; lastT = now; }
+
+    const ts = now;
+
+    // Run detectors (conditionally)
+    let fRes=null, pRes=null, hRes=null;
     try{
-      const results=await Promise.allSettled([
-        FaceLandmarker.createFromOptions(fileset,{ baseOptions:{ modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task' }, runningMode:'VIDEO', numFaces:1 }),
-        PoseLandmarker.createFromOptions(fileset,{ baseOptions:{ modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task' }, runningMode:'VIDEO', numPoses:1 }),
-        HandLandmarker.createFromOptions(fileset,{ baseOptions:{ modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task' }, runningMode:'VIDEO', numHands:2 })
-      ]);
-      if(results[0].status==='fulfilled') faceLm=results[0].value; if(results[1].status==='fulfilled') poseLm=results[1].value; if(results[2].status==='fulfilled') handLm=results[2].value;
-    }catch(e){ /* ignore */ }
-    const okCount=[faceLm,poseLm,handLm].filter(Boolean).length; mdlTxt.textContent=`Модели — ${okCount}/3`; setDot(modelSt, okCount? 'ok':'bad'); if(!okCount) showToast('Модели не загрузились. Проверь сеть/блокировщики.');
-
-    // --- State ---
-    let lastVideoTime=-1; let lastT=performance.now(), acc=0, frames=0; let tTime=0;
-    const S={ face:null, pose:null, hands:[null,null] };
-
-    function updateFace(lm){ const w=innerWidth,h=innerHeight, depth=800, mirror=mirrorChk.checked; const arr=faceGeom.attributes.position.array; if(!lm||!faceChk.checked){ fade(faceGroup,0); return; } const a=1 - Math.max(0.05, 1-Number(smoothRange.value)); if(!S.face){ S.face = lm.map(p=>({x:p.x,y:p.y,z:p.z})); } for(let i=0;i<468;i++){ S.face[i]=sp(S.face[i], lm[i], a); const p=S.face[i]; const sx=(mirror?(1-p.x):p.x)*w - w/2; const sy=(0.5-(p.y-0.5))*h; const sz=-p.z*depth; arr[i*3]=sx; arr[i*3+1]=sy; arr[i*3+2]=sz; } faceGeom.attributes.position.needsUpdate=true; fade(faceGroup,1); }
-
-    function updatePose(lm){ const w=innerWidth,h=innerHeight, depth=720, mirror=mirrorChk.checked; if(!lm||!poseChk.checked){ fade(poseGroup,0); return; } const a=1 - Math.max(0.05, 1-Number(smoothRange.value)); if(!S.pose){ S.pose = lm.map(p=>({x:p.x,y:p.y,z:p.z})); } for(let i=0;i<33;i++) S.pose[i]=sp(S.pose[i], lm[i], a); for(let i=0;i<33;i++){ const p=S.pose[i]; const sx=(mirror?(1-p.x):p.x)*w - w/2; const sy=(0.5-(p.y-0.5))*h; const sz=-p.z*depth; jointMeshes[i].position.set(sx,sy,sz); }
-      for(let e=0;e<BONES.length;e++){ const [A,B]=BONES[e]; const Apos=jointMeshes[A].position, Bpos=jointMeshes[B].position; const m=boneMeshes[e]; const dir=new THREE.Vector3().subVectors(Bpos,Apos); const len=Math.max(4, dir.length()); const mid=new THREE.Vector3().addVectors(Apos,Bpos).multiplyScalar(0.5); const q=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dir.clone().normalize()); m.position.copy(mid); m.quaternion.copy(q); m.scale.set(1,len,1); }
-      fade(poseGroup,1);
+      if (ui.face.checked && faceLm) fRes = faceLm.detectForVideo(video, ts);
+      if (ui.body.checked && poseLm) pRes = poseLm.detectForVideo(video, ts);
+      if (ui.hands.checked && handLm) hRes = handLm.detectForVideo(video, ts);
+    }catch(e){
+      console.warn('detect error', e);
     }
 
-    function updateHands(lms){ const w=innerWidth,h=innerHeight, depth=650, mirror=mirrorChk.checked; if(!lms||!lms.length||!handsChk.checked){ fade(handsGroup,0); return; } const a=1 - Math.max(0.05, 1-Number(smoothRange.value)); for(let i=0;i<2;i++){ const lm=lms[i]; if(!lm) continue; if(!S.hands[i]) S.hands[i]=lm.map(p=>({x:p.x,y:p.y,z:p.z})); for(let j=0;j<21;j++){ S.hands[i][j]=sp(S.hands[i][j], lm[j], a); const p=S.hands[i][j]; const sx=(mirror?(1-p.x):p.x)*w - w/2; const sy=(0.5-(p.y-0.5))*h; const sz=-p.z*depth; const hgrp=(i===0?leftHand:rightHand); hgrp.userData.sph[j].position.set(sx,sy,sz); } for(let e=0;e<HAND_CONN.length;e++){ const [A,B]=HAND_CONN[e]; const hgrp=(i===0?leftHand:rightHand); const Apos=hgrp.userData.sph[A].position, Bpos=hgrp.userData.sph[B].position; const m=hgrp.userData.cyl[e]; const dir=new THREE.Vector3().subVectors(Bpos,Apos); const len=Math.max(2,dir.length()); const mid=new THREE.Vector3().addVectors(Apos,Bpos).multiplyScalar(0.5); const q=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dir.clone().normalize()); m.position.copy(mid); m.quaternion.copy(q); m.scale.set(1,len,1); } }
-      fade(handsGroup,1);
+    // Update Three.js geometries
+    if (fRes?.faceLandmarks?.length){
+      const landmarks = fRes.faceLandmarks[0];
+      for (let i=0;i<468;i++){
+        const lm = landmarks[i];
+        lmToXYZ(lm, smooth.face, i*3, 0.35);
+        buf.face[i*3+0] = smooth.face[i*3+0];
+        buf.face[i*3+1] = smooth.face[i*3+1];
+        buf.face[i*3+2] = smooth.face[i*3+2];
+      }
+      facePts.visible = ui.face.checked;
+      facePts.geometry.attributes.position.array.set(buf.face);
+      facePts.geometry.attributes.position.needsUpdate = true;
+    }else{
+      facePts.visible = false;
     }
 
-    // --- Main loop ---
-    function onFrame(){ if(!running) return; const nowT=performance.now(); try{ if(video.readyState>=2){ if(video.currentTime!==lastVideoTime){ lastVideoTime=video.currentTime; const FD=faceLm?faceLm.detectForVideo(video,nowT):null; const PD=poseLm?poseLm.detectForVideo(video,nowT):null; const HD=handLm?handLm.detectForVideo(video,nowT):null; updateFace(FD?.faceLandmarks?.[0]); updatePose(PD?.landmarks?.[0]); updateHands(HD?.landmarks); } } }catch(err){ showToast('Ошибка: '+(err?.message||err)); }
-      // animate materials (nice subtle glow)
-      tTime+=0.016; [poseMat, leftHand.userData.mat, rightHand.userData.mat].forEach(m=>{ if(m?.uniforms?.uTime) m.uniforms.uTime.value=tTime; });
-      renderer.render(scene,cam);
-      // FPS chip
-      const dt=performance.now()-lastT; lastT=performance.now(); acc+=dt; frames++; if(acc>=500){ const fps=Math.round(1000*frames/acc); fpsTxt.textContent=`FPS — ${fps}`; setDot(fpsSt, fps>=24?'ok':(fps>=14?'warn':'bad')); acc=0; frames=0; }
-      if('requestVideoFrameCallback' in HTMLVideoElement.prototype){ video.requestVideoFrameCallback(()=>onFrame()); } else { requestAnimationFrame(onFrame); }
+    if (pRes?.landmarks?.length){
+      const lm = pRes.landmarks[0]; // first pose
+      for (let i=0;i<Math.min(lm.length,33);i++){
+        lmToXYZ(lm[i], smooth.pose, i*3, 0.38);
+        buf.pose[i*3+0]=smooth.pose[i*3+0];
+        buf.pose[i*3+1]=smooth.pose[i*3+1];
+        buf.pose[i*3+2]=smooth.pose[i*3+2];
+      }
+      posePts.visible = ui.body.checked;
+      posePts.geometry.attributes.position.array.set(buf.pose);
+      posePts.geometry.attributes.position.needsUpdate = true;
+    }else{
+      posePts.visible = false;
     }
-    function startLoop(){ if('requestVideoFrameCallback' in HTMLVideoElement.prototype){ video.requestVideoFrameCallback(()=>onFrame()); } else { requestAnimationFrame(onFrame); } }
 
-  })();
-  </script>
+    // Hands (0..2); order may vary; map by handedness where possible
+    if (hRes?.landmarks?.length){
+      // Default hide
+      leftPts.visible = rightPts.visible = false;
+
+      for (let i=0;i<hRes.landmarks.length;i++){
+        const lm = hRes.landmarks[i];
+        const hand = hRes.handedness?.[i]?.[0]?.categoryName || (i===0?'Right':'Left'); // fallback
+        const isRight = /right/i.test(hand);
+        const targetSmooth = isRight ? smooth.right : smooth.left;
+        const targetBuf = isRight ? buf.right : buf.left;
+        const targetPts = isRight ? rightPts : leftPts;
+
+        for (let k=0;k<lm.length; k++){
+          lmToXYZ(lm[k], targetSmooth, k*3, 0.42);
+          targetBuf[k*3+0]=targetSmooth[k*3+0];
+          targetBuf[k*3+1]=targetSmooth[k*3+1];
+          targetBuf[k*3+2]=targetSmooth[k*3+2];
+        }
+        targetPts.geometry.attributes.position.array.set(targetBuf);
+        targetPts.geometry.attributes.position.needsUpdate = true;
+        targetPts.visible = ui.hands.checked;
+      }
+    }else{
+      leftPts.visible = rightPts.visible = false;
+    }
+
+    // Subtle camera drift for “hero” feel
+    const t = ts*0.00025;
+    camera.position.x = Math.sin(t)*0.12;
+    camera.position.y = Math.cos(t*1.3)*0.06;
+    camera.lookAt(0,0,0);
+
+    renderer.render(scene, camera);
+
+    // Footer info
+    foot.textContent = `FPS: ${fps||'—'} • Face/Body/Hands: ${facePts.visible? '✓':'—'}/${posePts.visible? '✓':'—'}/${(leftPts.visible||rightPts.visible)? '✓':'—'}`;
+
+    requestAnimationFrame(loop);
+  }
+
+  // ======= UI Handlers =======
+  ui.start.addEventListener('click', async () => {
+    try{
+      ui.start.disabled = true;
+      statusBadge.textContent = 'загрузка моделей…';
+      statusBadge.className = 'badge warn';
+
+      if (!renderer) initThree();
+      await startCamera();
+      if (!vision) await initTasks();
+
+      applyStyle();
+
+      running = true;
+      statusBadge.textContent = 'работает';
+      statusBadge.className = 'badge ok';
+      loop();
+    }catch(err){
+      console.error(err);
+      statusBadge.textContent = 'ошибка доступа к камере';
+      statusBadge.className = 'badge warn';
+      alert('Нужно HTTPS и системное разрешение камеры. Safari: страница должна быть в активной вкладке и запуск по клику.');
+      ui.start.disabled = false;
+    }
+  });
+
+  ui.stop.addEventListener('click', ()=>{
+    running = false;
+    statusBadge.textContent = 'остановлено';
+    statusBadge.className = 'badge warn';
+    if (video.srcObject){
+      video.srcObject.getTracks().forEach(t=>t.stop());
+      video.srcObject = null;
+    }
+    ui.start.disabled = false;
+  });
+
+  ui.style.addEventListener('change', applyStyle);
+
+  ui.quality.addEventListener('change', async ()=>{
+    if (!vision) return;
+    statusBadge.textContent = 'переключение модели…';
+    statusBadge.className = 'badge warn';
+    await createPoseByQuality(ui.quality.value);
+    statusBadge.textContent = running ? 'работает' : 'ожидание старта';
+    statusBadge.className = running ? 'badge ok' : 'badge warn';
+  });
+
+  // Initial Three for pretty backdrop (before start)
+  initThree();
+})();
+</script>
 </body>
 </html>
