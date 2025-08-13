@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>HandTrack 3D — управление сайтом руками + рисование</title>
+  <title>Hand Ghost 3D — управление сайтом руками + рисование</title>
   <style>
     :root {
       --bg: #0b0d12;
@@ -16,7 +16,7 @@
     html, body { height: 100%; }
     body {
       margin: 0; background: var(--bg); color: #e6edf3; font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
-      overflow: hidden; touch-action: none; /* чтобы не скроллило на мобилке при жестах */
+      overflow: hidden; touch-action: none;
     }
     #stage { position: absolute; inset: 0; overflow: hidden; }
     #gl { position: absolute; inset: 0; display: block; pointer-events: none; }
@@ -45,15 +45,12 @@
     .demo.hit { animation: pop .28s ease; }
     @keyframes pop { 0%{transform:scale(1)} 50%{transform:scale(1.08)} 100%{transform:scale(1)} }
 
-    /* подсказка поверх */
     #hint { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 9; text-align: center; opacity: .8; pointer-events: none; }
     #hint h1 { margin: 0 0 8px; font-size: 20px; font-weight: 700; letter-spacing: .2px; }
     #hint p { margin: 0; font-size: 13px; opacity: .9; }
 
-    /* скрытое видео для захвата кадров */
     video#video { position: fixed; left: -9999px; top: -9999px; width: 1px; height: 1px; opacity: 0; }
 
-    /* адаптив */
     @media (min-width: 720px) {
       #ui { grid-template-columns: repeat(12, minmax(0,1fr)); }
       .card.controls { grid-column: 1 / span 8; }
@@ -62,26 +59,27 @@
   </style>
 </head>
 <body>
-  <!-- Сцена: WebGL (3D руки), слой рисования и курсор -->
   <div id="stage">
     <canvas id="gl"></canvas>
     <canvas id="draw"></canvas>
     <div id="cursor" hidden></div>
   </div>
 
-  <!-- Кнопка-демо (кликнуть щипком) -->
-  <button id="demoBtn" class="demo hittable" title="Сожми большой + указательный — будет клик">Жми рукой</button>
+  <button id="demoBtn" class="demo hittable" title="Сожми большой + указательный — клик/drag">Жми рукой</button>
 
-  <!-- Панель управления -->
   <div id="ui">
     <div class="card controls">
       <div class="row">
         <button id="startBtn">▶️ Включить камеру</button>
         <button id="stopBtn" disabled>⏹ Выключить</button>
         <button id="clearBtn">🧹 Очистить рисунок</button>
+        <button id="toggleDrawBtn">✍️ Режим рисования: выкл</button>
         <label><input id="mirrorChk" type="checkbox" checked> Зеркалить</label>
-        <label>Порог щипка <input id="pinchRange" type="range" min="0.01" max="0.10" step="0.005" value="0.035"></label>
-        <label>Стабилизация <input id="smoothRange" type="range" min="0" max="0.8" step="0.05" value="0.35"></label>
+        <label>Порог щипка <input id="pinchRange" type="range" min="0.010" max="0.090" step="0.005" value="0.035"></label>
+        <label>Стабилизация <input id="smoothRange" type="range" min="0" max="0.9" step="0.05" value="0.45"></label>
+      </div>
+      <div class="row" style="opacity:.8">
+        <div>Жесты: правая рука — курсор; <b>щипок</b> короткий = клик, длинный = drag; левая рука <b>щипок</b> и движение = скролл. Включи «Режим рисования» — щипком рисуешь.</div>
       </div>
     </div>
     <div class="card status-bar">
@@ -93,26 +91,22 @@
     </div>
   </div>
 
-  <!-- Подсказка по запуску (исчезнет после старта) -->
   <div id="hint">
     <h1>Дай доступ к камере и поднеси руки в кадр</h1>
-    <p>Видео не показывается — только 3D-скелет рук. Сожми большой палец и указательный, чтобы рисовать или «кликать».</p>
+    <p>Видео не показывается — только «призрачные» 3D-руки. Щипок (большой+указательный): клик/drag/рисование. Левой рукой — скролл.</p>
   </div>
 
-  <!-- Скрытое видео для кадров -->
   <video id="video" playsinline muted></video>
 
-  <!-- Библиотеки -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
   <script>
-  // ======= УТИЛИТЫ UI =======
   const $ = (sel) => document.querySelector(sel);
   const startBtn = $('#startBtn');
   const stopBtn = $('#stopBtn');
   const clearBtn = $('#clearBtn');
+  const toggleDrawBtn = $('#toggleDrawBtn');
   const mirrorChk = $('#mirrorChk');
   const pinchRange = $('#pinchRange');
   const smoothRange = $('#smoothRange');
@@ -123,299 +117,250 @@
   const hint = $('#hint');
   const demoBtn = $('#demoBtn');
 
-  const setDot = (el, cls) => {
-    el.querySelector('.dot').className = 'dot ' + ({ok:'ok',warn:'warn',bad:'bad'}[cls]||'');
-  };
+  const setDot = (el, cls) => { el.querySelector('.dot').className = 'dot ' + ({ok:'ok',warn:'warn',bad:'bad'}[cls]||''); };
 
-  // ======= ВИДЕО =======
+  // ====== Camera ======
   const video = $('#video');
-  let stream = null;
-  let running = false;
-
-  async function startCamera() {
+  let stream = null, running = false;
+  async function startCamera(){
     try {
-      setDot(permSt, 'warn');
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'user',
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 30, max: 60 }
-        },
-        audio: false
-      });
-      video.srcObject = stream;
-      await video.play();
-      setDot(permSt, 'ok');
-      running = true;
-      startBtn.disabled = true;
-      stopBtn.disabled = false;
-      hint.style.display = 'none';
+      setDot(permSt,'warn');
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode:'user', width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30, max:60} }, audio:false });
+      video.srcObject = stream; await video.play();
+      setDot(permSt,'ok'); running=true; startBtn.disabled=true; stopBtn.disabled=false; hint.style.display='none';
       processLoop();
-    } catch (e) {
-      console.error(e);
-      setDot(permSt, 'bad');
-      alert('Не удалось получить доступ к камере. Нужен HTTPS и явное разрешение.');
-    }
+    } catch(e){ console.error(e); setDot(permSt,'bad'); alert('Нужен HTTPS и разрешение камеры'); }
   }
+  function stopCamera(){ running=false; if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } video.srcObject=null; startBtn.disabled=false; stopBtn.disabled=true; }
+  startBtn.addEventListener('click', startCamera); stopBtn.addEventListener('click', stopCamera);
 
-  async function stopCamera() {
-    running = false;
-    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-    video.srcObject = null;
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
-  }
-
-  startBtn.addEventListener('click', startCamera);
-  stopBtn.addEventListener('click', stopCamera);
-
-  // ======= СЦЕНА THREE.JS (3D скелет рук) =======
+  // ====== Three.js scene ======
   const glCanvas = $('#gl');
-  const renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+  const renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias:true, alpha:true, powerPreference:'high-performance' });
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera();
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x223344, 1.0); scene.add(hemi);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.6); dir.position.set(0,0,1); scene.add(dir);
 
-  const handGroups = [new THREE.Group(), new THREE.Group()];
-  handGroups.forEach(g => scene.add(g));
-
-  const lineMatL = new THREE.LineBasicMaterial({ color: 0x8ad1ff, transparent: true, opacity: 0.75 });
-  const lineMatR = new THREE.LineBasicMaterial({ color: 0xff9aa2, transparent: true, opacity: 0.75 });
-  const ptsMatL  = new THREE.PointsMaterial({ color: 0xffffff, size: 8, sizeAttenuation: false, transparent: true, opacity: 0.9 });
-  const ptsMatR  = new THREE.PointsMaterial({ color: 0xffffff, size: 8, sizeAttenuation: false, transparent: true, opacity: 0.9 });
-
-  const CONNECTIONS = [
-    [0,1],[1,2],[2,3],[3,4],      // большой
-    [0,5],[5,6],[6,7],[7,8],      // указательный
-    [0,9],[9,10],[10,11],[11,12], // средний
-    [0,13],[13,14],[14,15],[15,16], // безымянный
-    [0,17],[17,18],[18,19],[19,20]  // мизинец
-  ];
-
-  function createHandGeometry() {
-    const lineGeom = new THREE.BufferGeometry();
-    lineGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(CONNECTIONS.length*2*3), 3));
-    const ptsGeom = new THREE.BufferGeometry();
-    ptsGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(21*3), 3));
-    return { lineGeom, ptsGeom };
-  }
-
-  const handMeshes = handGroups.map((g, idx) => {
-    const { lineGeom, ptsGeom } = createHandGeometry();
-    const line = new THREE.LineSegments(lineGeom, idx===0?lineMatL:lineMatR);
-    const pts  = new THREE.Points(ptsGeom, idx===0?ptsMatL:ptsMatR);
-    g.add(line); g.add(pts);
-    return { lineGeom, ptsGeom, line, pts };
-  });
-
-  function resize() {
+  function resize(){
     const w = glCanvas.clientWidth = window.innerWidth;
     const h = glCanvas.clientHeight = window.innerHeight;
-    renderer.setSize(w, h, false);
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    renderer.setPixelRatio(dpr);
-
-    // Орто-камера: координаты в пикселях сцены
-    camera.left = -w/2; camera.right = w/2; camera.top = h/2; camera.bottom = -h/2; camera.near = -1000; camera.far = 1000; camera.updateProjectionMatrix();
-
-    // холст рисования
+    renderer.setSize(w,h,false);
+    const dpr = Math.min(devicePixelRatio||1, 2); renderer.setPixelRatio(dpr);
+    camera.left=-w/2; camera.right=w/2; camera.top=h/2; camera.bottom=-h/2; camera.near=-2000; camera.far=2000; camera.updateProjectionMatrix();
     setupDrawCanvas();
   }
   window.addEventListener('resize', resize);
 
-  // ======= СЛОЙ РИСОВАНИЯ (2D) =======
-  const drawCanvas = $('#draw');
-  const drawCtx = drawCanvas.getContext('2d');
-  let drawing = false;
-  let prevPt = null;
+  // ====== Ghost-hand mesh (cylinders + joints) ======
+  const CONNECTIONS=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20]];
+  function makeHandGroup(color){
+    const g = new THREE.Group();
+    const material = new THREE.MeshStandardMaterial({ color, transparent:true, opacity:0.35, metalness:0.2, roughness:0.4 });
+    const jointMat = new THREE.MeshStandardMaterial({ color:0xffffff, transparent:true, opacity:0.5, metalness:0.0, roughness:0.6 });
+    const cylinders=[], spheres=[];
+    for(let i=0;i<CONNECTIONS.length;i++){
+      const geom = new THREE.CylinderGeometry(6,6,1, 10, 1, true); // радиус ~6px
+      const m = new THREE.Mesh(geom, material);
+      m.castShadow=false; m.receiveShadow=false; g.add(m); cylinders.push(m);
+    }
+    for(let i=0;i<21;i++){
+      const s = new THREE.Mesh(new THREE.SphereGeometry(7, 12, 10), jointMat);
+      g.add(s); spheres.push(s);
+    }
+    g.userData = { cylinders, spheres, material, jointMat, alpha: 0 };
+    scene.add(g); return g;
+  }
+  const leftHand = makeHandGroup(0x8ad1ff);
+  const rightHand = makeHandGroup(0xff9aa2);
+
+  // ====== Drawing layer ======
+  const drawCanvas = $('#draw'); const drawCtx = drawCanvas.getContext('2d');
+  let drawMode=false; toggleDrawBtn.addEventListener('click', ()=>{ drawMode=!drawMode; toggleDrawBtn.textContent = `✍️ Режим рисования: ${drawMode?'вкл':'выкл'}`; });
   function setupDrawCanvas(){
     const w = drawCanvas.width = Math.floor(window.innerWidth * Math.min(devicePixelRatio||1,2));
     const h = drawCanvas.height = Math.floor(window.innerHeight * Math.min(devicePixelRatio||1,2));
-    drawCanvas.style.width = window.innerWidth + 'px';
-    drawCanvas.style.height = window.innerHeight + 'px';
-    drawCtx.lineCap = 'round';
-    drawCtx.lineJoin = 'round';
-    drawCtx.lineWidth = 6 * Math.max(1, (devicePixelRatio||1)*0.75);
-    drawCtx.strokeStyle = '#ffffff';
-    drawCtx.globalAlpha = 0.95;
+    drawCanvas.style.width = window.innerWidth+'px'; drawCanvas.style.height = window.innerHeight+'px';
+    drawCtx.lineCap='round'; drawCtx.lineJoin='round'; drawCtx.lineWidth = 6 * Math.max(1,(devicePixelRatio||1)*0.75); drawCtx.strokeStyle='#ffffff'; drawCtx.globalAlpha=0.95;
   }
-  clearBtn.addEventListener('click', () => { drawCtx.clearRect(0,0,drawCanvas.width, drawCanvas.height); });
+  $('#clearBtn').addEventListener('click', ()=> drawCtx.clearRect(0,0,drawCanvas.width,drawCanvas.height));
 
-  // ======= ЛОГИКА ЖЕСТОВ =======
-  let lastPinch = false;
-  let pinchDownAt = 0;
+  // ====== Cursor & gestures ======
   const cursorEl = $('#cursor');
+  function updateCursor(x,y,vis=true){ if(!vis){cursorEl.hidden=true;return;} cursorEl.hidden=false; cursorEl.style.left=x+'px'; cursorEl.style.top=y+'px'; }
+  function normToScreenPx(x,y){ const w=innerWidth,h=innerHeight; const mx = mirrorChk.checked ? (1-x) : x; return [mx*w, y*h]; }
+  function distance(a,b){ const dx=a.x-b.x, dy=a.y-b.y, dz=(a.z||0)-(b.z||0); return Math.hypot(dx,dy,dz); }
 
-  function normToScreenPx(x, y) {
-    const w = window.innerWidth, h = window.innerHeight;
-    const mx = mirrorChk.checked ? (1 - x) : x;
-    return [mx * w, y * h];
+  // Hysteresis for pinch
+  const PINCH_ON = ()=> Number(pinchRange.value);     // closer than -> ON
+  const PINCH_OFF = ()=> Number(pinchRange.value) + 0.012; // farther than -> OFF
+
+  // Site control: right = cursor/click/drag, left = scroll
+  let dragActive = false, dragStarted = false, dragElem=null;
+  const ptrId = 9; // fixed pointer id
+  function dispatchPointer(el, type, x, y){
+    const e = new PointerEvent(type, { pointerId:ptrId, pointerType:'touch', clientX:x, clientY:y, bubbles:true, cancelable:true });
+    el.dispatchEvent(e);
+  }
+  function startDrag(x,y){ const el = document.elementFromPoint(x,y) || document.body; dragElem = el; dispatchPointer(el,'pointerover',x,y); dispatchPointer(el,'pointerenter',x,y); dispatchPointer(el,'pointerdown',x,y); dragActive=true; }
+  function moveDrag(x,y){ if(!dragElem) return; dispatchPointer(dragElem,'pointermove',x,y); }
+  function endDrag(x,y){ if(!dragElem) return; dispatchPointer(dragElem,'pointerup',x,y); dispatchPointer(dragElem,'click',x,y); dragActive=false; dragElem=null; }
+
+  // Scroll with left hand pinch
+  let lastScrollY = null;
+
+  // Drawing state
+  let drawing=false, prevPt=null;
+
+  // ====== Stabilization / visibility ======
+  const MAX_HANDS = 2;
+  const handState = [
+    {visible:false, present:0, missing:0, smoothed:null, alpha:0, pinch:false, pinchTime:0, role:'left'},
+    {visible:false, present:0, missing:0, smoothed:null, alpha:0, pinch:false, pinchTime:0, role:'right'}
+  ];
+
+  function fadeHand(group, targetAlpha){
+    const ud = group.userData; ud.alpha += (targetAlpha - ud.alpha) * 0.25; // ease
+    ud.material.opacity = 0.15 + 0.35*ud.alpha;
+    ud.jointMat.opacity = 0.3 + 0.2*ud.alpha;
+    group.visible = ud.alpha > 0.02;
   }
 
-  function updateCursor(x, y, visible=true) {
-    if (!visible) { cursorEl.hidden = true; return; }
-    cursorEl.hidden = false;
-    cursorEl.style.left = x + 'px';
-    cursorEl.style.top  = y + 'px';
-  }
-
-  function distance(a, b) {
-    const dx = a.x-b.x, dy=a.y-b.y, dz=(a.z||0)-(b.z||0); return Math.hypot(dx,dy,dz);
-  }
-
-  function maybeClickAt(x,y) {
-    const el = document.elementFromPoint(x, y);
-    if (!el) return;
-    // кликаем только по явным целям (безопаснее)
-    const target = el.closest('.hittable');
-    if (target) {
-      target.classList.add('hit');
-      setTimeout(()=>target.classList.remove('hit'), 280);
-      target.click();
-    }
-  }
-
-  demoBtn.addEventListener('click', () => {
-    demoBtn.textContent = '✅ Попал!';
-    setTimeout(()=>demoBtn.textContent = 'Жми рукой', 1200);
-  });
-
-  // Сглаживание координат (экспон. фильтр)
-  function smooth(prev, next, amt) {
-    if (!prev) return next;
-    return { x: prev.x + (next.x - prev.x) * amt, y: prev.y + (next.y - prev.y) * amt, z: prev.z + (next.z - prev.z) * amt };
-  }
-
-  // ======= MEDIAPIPE HANDS =======
-  let hands = null;
-  let processing = false;
-
-  async function initHands() {
-    setDot(modelSt, 'warn');
-    hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
-    hands.setOptions({
-      maxNumHands: 2,
-      modelComplexity: 1,              // 0 быстрее, 1 точнее
-      minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.6
-    });
+  // ====== Mediapipe Hands ======
+  let hands = null, processing=false;
+  async function initHands(){
+    setDot(modelSt,'warn');
+    hands = new Hands({ locateFile: (f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+    hands.setOptions({ maxNumHands:2, modelComplexity:1, minDetectionConfidence:0.7, minTrackingConfidence:0.7 });
     hands.onResults(onHands);
-    setDot(modelSt, 'ok');
+    setDot(modelSt,'ok');
   }
 
-  async function processLoop() {
-    if (!running) return;
-    if (!hands) await initHands();
-    if (!processing) {
-      processing = true;
-      try { await hands.send({ image: video }); } catch (e) { console.error(e); }
-      processing = false;
-    }
+  async function processLoop(){
+    if(!running) return;
+    if(!hands) await initHands();
+    if(!processing){ processing=true; try{ await hands.send({ image: video }); }catch(e){ console.error(e); } processing=false; }
     requestAnimationFrame(processLoop);
   }
 
-  // ======= РЕНДЕР КАДРА РУК =======
-  let smoothed = [null, null];
-  const depthScale = 600; // глубина 3D (подберите при желании)
+  // Map mediapipe hands to left/right groups (by label or x)
+  function resolveRoles(results){
+    const out = [null, null];
+    if(!results.multiHandLandmarks) return out;
+    for(let i=0;i<results.multiHandLandmarks.length;i++){
+      const lm = results.multiHandLandmarks[i];
+      const label = results.multiHandedness?.[i]?.label || (lm[0].x < 0.5 ? 'Left':'Right');
+      const idx = (label === 'Left') ? 0 : 1; // 0-left, 1-right
+      out[idx] = lm;
+    }
+    return out;
+  }
 
-  function onHands(results) {
-    const w = window.innerWidth, h = window.innerHeight;
+  // Update hand mesh from 21 landmarks
+  function updateHandGroup(group, lm){
+    const w=innerWidth, h=innerHeight, depthScale=600; const mirror = mirrorChk.checked;
+    const ud = group.userData; const {cylinders, spheres} = ud;
+    // positions array for reuse
+    const P = new Array(21);
+    for(let j=0;j<21;j++){
+      const p = lm[j];
+      const sx = (mirror ? (1-p.x) : p.x) * w - w/2;
+      const sy = (0.5 - (p.y - 0.5)) * h;
+      const sz = -p.z * depthScale;
+      P[j] = new THREE.Vector3(sx, sy, sz);
+      spheres[j].position.copy(P[j]);
+      spheres[j].scale.setScalar(1.0);
+    }
+    // cylinders between connections
+    for(let i=0;i<CONNECTIONS.length;i++){
+      const [a,b]=CONNECTIONS[i]; const A=P[a], B=P[b]; const m=cylinders[i];
+      const dir = new THREE.Vector3().subVectors(B,A); const len = Math.max(1, dir.length());
+      const mid = new THREE.Vector3().addVectors(A,B).multiplyScalar(0.5);
+      const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dir.clone().normalize());
+      m.position.copy(mid); m.quaternion.copy(q); m.scale.set(1, len, 1);
+    }
+  }
 
-    // очистить геометрию (по умолчанию — прячем)
-    handGroups.forEach((g, i) => { g.visible = false; });
+  // Smoothing
+  function lerp(a,b,t){ return a+(b-a)*t; }
+  function smoothPoint(prev, next, amt){ if(!prev) return {...next}; return { x: lerp(prev.x,next.x,amt), y: lerp(prev.y,next.y,amt), z: lerp(prev.z,next.z,amt) }; }
 
-    if (results.multiHandLandmarks && results.multiHandLandmarks.length) {
-      for (let i = 0; i < Math.min(2, results.multiHandLandmarks.length); i++) {
-        const lm = results.multiHandLandmarks[i];
-        const handed = results.multiHandedness?.[i]?.label || (i===0?'Left':'Right');
-        const idx = i; // 0/1
+  // Main results handler
+  let lastT = performance.now(), acc=0, frames=0;
+  function onHands(results){
+    const roles = resolveRoles(results);
+    const groups = [leftHand, rightHand];
 
-        // Сглаживаем каждый маркер
-        const alpha = Number(smoothRange.value);
-        smoothed[idx] = smoothed[idx] || lm.map(p=>({x:p.x,y:p.y,z:p.z}));
-        for (let j = 0; j < 21; j++) smoothed[idx][j] = smooth(smoothed[idx][j], lm[j], 1 - Math.max(0.05, 1 - alpha));
+    for(let hIdx=0; hIdx<2; hIdx++){
+      const lm = roles[hIdx];
+      const S = handState[hIdx];
+      if(lm){
+        S.present++; S.missing=0; S.visible=true;
+        // build smoothed
+        if(!S.smoothed) S.smoothed = lm.map(p=>({x:p.x,y:p.y,z:p.z}));
+        const alpha = 1 - Math.max(0.05, 1 - Number(smoothRange.value));
+        for(let j=0;j<21;j++) S.smoothed[j] = smoothPoint(S.smoothed[j], lm[j], alpha);
 
-        // Обновить 3D геометрию
-        const { lineGeom, ptsGeom } = handMeshes[idx];
-        const lp = lineGeom.attributes.position.array;
-        const pp = ptsGeom.attributes.position.array;
-        const mirror = mirrorChk.checked;
-        for (let j = 0; j < 21; j++) {
-          const p = smoothed[idx][j];
-          const sx = (mirror ? (1 - p.x) : p.x) * w - w/2;
-          const sy = (0.5 - (p.y - 0.5)) * h; // переворот Y в орто-камере
-          const sz = -p.z * depthScale;
-          pp[j*3+0] = sx; pp[j*3+1] = sy; pp[j*3+2] = sz;
-        }
-        let k = 0;
-        for (const [a,b] of CONNECTIONS) {
-          lp[k++] = pp[a*3+0]; lp[k++] = pp[a*3+1]; lp[k++] = pp[a*3+2];
-          lp[k++] = pp[b*3+0]; lp[k++] = pp[b*3+1]; lp[k++] = pp[b*3+2];
-        }
-        lineGeom.attributes.position.needsUpdate = true;
-        ptsGeom.attributes.position.needsUpdate = true;
-        handGroups[idx].visible = true;
+        updateHandGroup(groups[hIdx], S.smoothed);
+        fadeHand(groups[hIdx], 1);
 
-        // Курсор и рисование — берём кончик указательного (8) и большой (4)
-        const tip = smoothed[idx][8];
-        const thumb = smoothed[idx][4];
+        // gestures
+        const tip = S.smoothed[8], thumb = S.smoothed[4];
         const [cx, cy] = normToScreenPx(tip.x, tip.y);
-        updateCursor(cx, cy, true);
-
         const d = distance(tip, thumb);
-        const pinch = d < Number(pinchRange.value);
+        const was = S.pinch;
+        if(!was && d < PINCH_ON()){ S.pinch = true; S.pinchTime = performance.now(); }
+        if(was && d > PINCH_OFF()){ S.pinch = false; }
 
-        // Рисование: удерживай щипок
-        const dpr = Math.min(devicePixelRatio||1, 2);
-        const dx = Math.round(cx * dpr), dy = Math.round(cy * dpr);
-        if (pinch && !lastPinch) {
-          drawing = true; prevPt = {x:dx, y:dy}; pinchDownAt = performance.now();
-          // «клик» по элементу, если щипок короткий (<180мс)
-          maybeClickAt(cx, cy);
+        // RIGHT HAND = pointer/drag/draw
+        if(hIdx===1){
+          updateCursor(cx,cy,true);
+          if(drawMode){
+            // draw with pinch hold
+            const dpr = Math.min(devicePixelRatio||1,2); const dx = Math.round(cx*dpr), dy=Math.round(cy*dpr);
+            if(S.pinch && !drawing){ drawing=true; prevPt={x:dx,y:dy}; }
+            if(S.pinch && drawing && prevPt){ drawCtx.beginPath(); drawCtx.moveTo(prevPt.x,prevPt.y); drawCtx.lineTo(dx,dy); drawCtx.stroke(); prevPt={x:dx,y:dy}; }
+            if(!S.pinch){ drawing=false; prevPt=null; }
+          } else {
+            // site control
+            if(S.pinch && !dragStarted){ // check short vs long
+              const t = performance.now() - S.pinchTime;
+              if(t>180 && !dragActive){ startDrag(cx,cy); dragStarted=true; }
+            }
+            if(S.pinch && dragActive){ moveDrag(cx,cy); }
+            if(!S.pinch){ if(dragActive){ endDrag(cx,cy); } else {
+              // short click
+              const t = performance.now() - S.pinchTime; if(t>30 && t<180){ const el = document.elementFromPoint(cx,cy) || document.body; el.click?.(); }
+            } dragStarted=false; }
+          }
         }
-        if (pinch && drawing && prevPt) {
-          drawCtx.beginPath();
-          drawCtx.moveTo(prevPt.x, prevPt.y);
-          drawCtx.lineTo(dx, dy);
-          drawCtx.stroke();
-          prevPt = {x:dx, y:dy};
+
+        // LEFT HAND = scroll when pinching
+        if(hIdx===0){
+          if(S.pinch){ if(lastScrollY==null) lastScrollY = cy; const dy = cy - lastScrollY; window.scrollBy({ top: dy*0.8, behavior:'auto' }); lastScrollY = cy; }
+          else { lastScrollY = null; }
         }
-        if (!pinch) { drawing = false; prevPt = null; }
-        lastPinch = pinch;
+
+      } else {
+        // missing frame -> keep last few frames and fade
+        S.missing++; if(S.missing>8) S.visible=false; fadeHand(groups[hIdx], S.visible? 0.6 : 0);
+        if(hIdx===1) updateCursor(0,0,false);
+        S.pinch=false; drawing=false; prevPt=null; if(hIdx===1 && dragActive){ endDrag(innerWidth/2, innerHeight/2); }
       }
-    } else {
-      updateCursor(0,0,false);
-      lastPinch = false; drawing = false; prevPt = null;
     }
 
-    // Рендер 3D сцены
     renderer.render(scene, camera);
 
     // FPS
-    fpsMeter();
+    const t = performance.now(); const dt=t-lastT; lastT=t; acc+=dt; frames++; if(acc>=500){ const fps=Math.round(1000*frames/acc); fpsTxt.textContent=`FPS — ${fps}`; setDot(fpsSt, fps>=24?'ok':(fps>=14?'warn':'bad')); acc=0; frames=0; }
   }
 
-  // ======= FPS =======
-  let lastT = performance.now();
-  let acc = 0, frames = 0;
-  function fpsMeter(){
-    const t = performance.now();
-    const dt = t - lastT; lastT = t; acc += dt; frames++;
-    if (acc >= 500) { // обновляем 2 раза в секунду
-      const fps = Math.round(1000 * frames / acc);
-      fpsTxt.textContent = `FPS — ${fps}`;
-      setDot(fpsSt, fps >= 24 ? 'ok' : (fps >= 14 ? 'warn' : 'bad'));
-      acc = 0; frames = 0;
-    }
-  }
-
-  // ======= ЗАПУСК =======
-  function boot(){
-    resize();
-    renderer.setClearColor(0x000000, 0); // прозрачность
-  }
+  // ====== Boot ======
+  function boot(){ resize(); renderer.setClearColor(0x000000,0); }
   boot();
 
+  // ====== Video element (hidden) ======
+  // draw nothing — mediapipe читает кадры прямо из <video>
   </script>
 </body>
 </html>
