@@ -1,505 +1,328 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Hand Tracking & Control</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background: linear-gradient(45deg, #1a1a2e, #16213e);
-            font-family: 'Arial', sans-serif;
-            overflow: hidden;
-            color: white;
-        }
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>MAX Hand Control 3D — призрачная рука, управление сайтом, рисование</title>
+  <style>
+    :root {
+      --bg: #05070b;
+      --glass: rgba(255,255,255,.06);
+      --glass-2: rgba(255,255,255,.10);
+      --txt: #e6edf3;
+      --acc1: #8ad1ff;
+      --acc2: #ff9aa2;
+      --good:#7CFC00; --warn:#ffb74d; --bad:#ff6b6b;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { margin: 0; background: radial-gradient(1200px 800px at 80% -10%, #0e1220, #05070b); color: var(--txt); font: 14px/1.35 Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial; overflow: hidden; }
 
-        #container {
-            position: relative;
-            width: 100vw;
-            height: 100vh;
-        }
+    /* Сцена */
+    #stage { position: absolute; inset: 0; overflow: hidden; }
+    #gl { position: absolute; inset: 0; display: block; pointer-events: none; }
+    #draw { position: absolute; inset: 0; display: block; pointer-events: none; }
+    #cursor { position: absolute; width: 18px; height: 18px; border-radius: 999px; background: #fff; opacity: .9; transform: translate(-50%, -50%); pointer-events: none; box-shadow: 0 0 18px rgba(255,255,255,.7); mix-blend-mode: difference; }
 
-        #videoElement {
-            position: absolute;
-            top: -9999px;
-            left: -9999px;
-            width: 640px;
-            height: 480px;
-        }
+    /* Панель */
+    #ui { position: fixed; left: 14px; bottom: 14px; right: 14px; z-index: 10; display: grid; gap: 10px; grid-template-columns: repeat(12, 1fr); }
+    .card { grid-column: 1/-1; background: var(--glass); border: 1px solid rgba(255,255,255,.12); border-radius: 18px; padding: 12px; backdrop-filter: blur(10px); box-shadow: 0 12px 30px rgba(0,0,0,.25) inset; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    button, .seg, select { appearance: none; border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.08); color: #fff; padding: 10px 14px; border-radius: 12px; cursor: pointer; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    label { display: inline-flex; align-items: center; gap: 8px; opacity: .95; }
+    input[type="range"] { width: 160px; }
+    input[type="color"] { width: 40px; height: 36px; padding: 0; border: 1px solid rgba(255,255,255,.18); border-radius: 10px; background: transparent; }
 
-        #canvasElement {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 10;
-            pointer-events: none;
-        }
+    .status { display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 999px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); }
+    .dot { width: 10px; height: 10px; border-radius: 999px; background: #888; box-shadow: 0 0 10px currentColor; }
+    .ok{color:var(--good)} .warn{color:var(--warn)} .bad{color:var(--bad)}
 
-        #drawingCanvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 5;
-        }
+    /* Демокнопка */
+    .demo { position: fixed; top: 14px; right: 14px; z-index: 12; padding: 12px 16px; font-weight: 700; }
+    .demo.hit { animation: pop .28s ease; }
+    @keyframes pop { 0%{transform:scale(1)} 50%{transform:scale(1.08)} 100%{transform:scale(1)} }
 
-        #threeCanvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 1;
-        }
+    /* Хинт */
+    #hint { position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%); z-index: 9; text-align: center; opacity: .9; pointer-events: none; }
+    #hint h1{margin:0 0 8px; font-size:22px; letter-spacing:.2px} #hint p{margin:0; font-size:13px; opacity:.9}
 
-        .control-panel {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            z-index: 20;
-            background: rgba(0,0,0,0.7);
-            padding: 20px;
-            border-radius: 10px;
-            backdrop-filter: blur(10px);
-        }
+    /* Видео скрыто полностью */
+    video#video { position: fixed; left: -9999px; top: -9999px; width: 1px; height: 1px; opacity: 0; }
 
-        .status {
-            font-size: 14px;
-            margin-bottom: 10px;
-            color: #00ff88;
-        }
-
-        .color-palette {
-            display: flex;
-            gap: 10px;
-            margin-top: 10px;
-        }
-
-        .color-btn {
-            width: 30px;
-            height: 30px;
-            border: none;
-            border-radius: 50%;
-            cursor: pointer;
-            transition: transform 0.2s;
-        }
-
-        .color-btn:hover {
-            transform: scale(1.2);
-        }
-
-        .gesture-info {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            z-index: 20;
-            background: rgba(0,0,0,0.7);
-            padding: 15px;
-            border-radius: 10px;
-            backdrop-filter: blur(10px);
-            font-size: 12px;
-        }
-
-        #startButton {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 30;
-            padding: 20px 40px;
-            font-size: 18px;
-            background: #00ff88;
-            color: black;
-            border: none;
-            border-radius: 10px;
-            cursor: pointer;
-            font-weight: bold;
-        }
-
-        #startButton:hover {
-            background: #00cc66;
-        }
-    </style>
+    @media (min-width: 820px){
+      .card.controls{ grid-column: 1/ span 8 } .card.status-bar{grid-column: 9/-1}
+    }
+  </style>
 </head>
 <body>
-    <div id="container">
-        <button id="startButton">🎥 Разрешить доступ к камере</button>
-        
-        <video id="videoElement" autoplay muted playsinline></video>
-        <canvas id="canvasElement"></canvas>
-        <canvas id="drawingCanvas"></canvas>
-        <div id="threeCanvas"></div>
-        
-        <div class="control-panel" style="display: none;" id="controlPanel">
-            <div class="status" id="status">Инициализация...</div>
-            <div>Точность трекинга: <span id="confidence">0%</span></div>
-            <div class="color-palette">
-                <button class="color-btn" style="background: #ff0000" onclick="setDrawColor('#ff0000')"></button>
-                <button class="color-btn" style="background: #00ff00" onclick="setDrawColor('#00ff00')"></button>
-                <button class="color-btn" style="background: #0000ff" onclick="setDrawColor('#0000ff')"></button>
-                <button class="color-btn" style="background: #ffff00" onclick="setDrawColor('#ffff00')"></button>
-                <button class="color-btn" style="background: #ff00ff" onclick="setDrawColor('#ff00ff')"></button>
-                <button class="color-btn" style="background: #ffffff" onclick="clearCanvas()">✕</button>
-            </div>
+  <div id="stage">
+    <canvas id="gl"></canvas>
+    <canvas id="draw"></canvas>
+    <div id="cursor" hidden></div>
+  </div>
+
+  <button id="demoBtn" class="demo hittable" title="Правой рукой: щипок — клик / удержание — drag / двойной щипок — двойной клик">Жми рукой</button>
+
+  <div id="ui">
+    <div class="card controls">
+      <div class="row">
+        <button id="startBtn">▶️ Камера</button>
+        <button id="stopBtn" disabled>⏹ Стоп</button>
+        <button id="clearBtn">🧹 Очистить</button>
+        <button id="saveBtn">💾 PNG</button>
+
+        <div class="seg" id="modeSeg" role="tablist" aria-label="Режим">
+          <button data-mode="control">🖱️ Управление</button>
+          <button data-mode="draw" class="active">✍️ Рисование</button>
         </div>
 
-        <div class="gesture-info" style="display: none;" id="gestureInfo">
-            <div><strong>Управление:</strong></div>
-            <div>✊ Сжатый кулак - Рисование</div>
-            <div>✋ Открытая ладонь - Навигация</div>
-            <div>👌 Щепотка - Выбор цвета</div>
-            <div>☝️ Указательный - Курсор</div>
+        <label><input id="mirrorChk" type="checkbox" checked> Зеркалить</label>
+        <label>Порог щипка <input id="pinchRange" type="range" min="0.010" max="0.090" step="0.005" value="0.030"></label>
+        <label>Стабилизация <input id="smoothRange" type="range" min="0" max="0.95" step="0.05" value="0.55"></label>
+      </div>
+      <div class="row">
+        <label>Цвет <input type="color" id="colorPick" value="#ffffff"></label>
+        <label>Толщина <input id="sizeRange" type="range" min="2" max="30" step="1" value="8"></label>
+        <button id="undoBtn">↶ Отменить</button>
+        <button id="eraserBtn">🩹 Ластик</button>
+      </div>
+      <div class="row" style="opacity:.9">
+        <div>
+          Жесты: Правая рука — курсор/рисование: <b>щипок</b> короткий = клик, длинный = drag, двойной = двойной клик, <b>средний+большой</b> = ластик, <b>безымянный+большой</b> = правый клик. Левая рука — <b>щипок и веди</b> = скролл. Две руки с щипком — <b>зум страницы</b>.
         </div>
+      </div>
     </div>
+    <div class="card status-bar">
+      <div class="row">
+        <div class="status" id="permSt"><span class="dot"></span><span>Камера</span></div>
+        <div class="status" id="modelSt"><span class="dot"></span><span>Модель</span></div>
+        <div class="status" id="fpsSt"><span class="dot"></span><span id="fpsTxt">FPS — …</span></div>
+      </div>
+    </div>
+  </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <div id="hint">
+    <h1>Дай доступ к камере и поднеси руки в кадр</h1>
+    <p>Видео не показывается. Видны «призрачные» 3D-руки. Управляй сайтом и рисуй щипком.</p>
+  </div>
 
-    <script>
-        // Глобальные переменные
-        let hands;
-        let scene, renderer, camera3d, handMeshes = [];
-        let isDrawing = false;
-        let currentColor = '#ff0000';
-        let lastDrawPoint = null;
+  <video id="video" playsinline muted></video>
 
-        // Элементы DOM
-        const videoElement = document.getElementById('videoElement');
-        const canvasElement = document.getElementById('canvasElement');
-        const canvasCtx = canvasElement.getContext('2d');
-        const drawingCanvas = document.getElementById('drawingCanvas');
-        const drawingCtx = drawingCanvas.getContext('2d');
-        const statusElement = document.getElementById('status');
-        const confidenceElement = document.getElementById('confidence');
-        const startButton = document.getElementById('startButton');
-        const controlPanel = document.getElementById('controlPanel');
-        const gestureInfo = document.getElementById('gestureInfo');
+  <!-- libs -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 
-        // Инициализация камеры через getUserMedia
-        async function initCamera() {
-            try {
-                statusElement.textContent = 'Запрашиваем доступ к камере...';
-                
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        width: 640,
-                        height: 480,
-                        facingMode: 'user'
-                    }
-                });
+  <script>
+  // ---------- UI helpers ----------
+  const $ = s => document.querySelector(s);
+  const startBtn=$('#startBtn'), stopBtn=$('#stopBtn'), clearBtn=$('#clearBtn'), saveBtn=$('#saveBtn');
+  const mirrorChk=$('#mirrorChk'), pinchRange=$('#pinchRange'), smoothRange=$('#smoothRange');
+  const permSt=$('#permSt'), modelSt=$('#modelSt'), fpsTxt=$('#fpsTxt'), fpsSt=$('#fpsSt'), hint=$('#hint');
+  const demoBtn=$('#demoBtn');
+  const colorPick=$('#colorPick'), sizeRange=$('#sizeRange'), undoBtn=$('#undoBtn'), eraserBtn=$('#eraserBtn');
+  const modeSeg=$('#modeSeg'); let mode='draw';
+  modeSeg.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ modeSeg.querySelectorAll('button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); mode=b.dataset.mode; }));
+  const setDot=(el,cls)=>{ el.querySelector('.dot').className='dot '+({ok:'ok',warn:'warn',bad:'bad'}[cls]||''); };
 
-                videoElement.srcObject = stream;
-                videoElement.onloadedmetadata = () => {
-                    videoElement.play();
-                    statusElement.textContent = 'Камера подключена! Инициализируем распознавание...';
-                    initMediaPipe();
-                };
+  // ---------- Camera ----------
+  const video=$('#video'); let stream=null, running=false;
+  async function startCamera(){
+    try{
+      setDot(permSt,'warn');
+      stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'user', width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30,max:60} }, audio:false });
+      video.srcObject=stream; await video.play();
+      setDot(permSt,'ok'); running=true; startBtn.disabled=true; stopBtn.disabled=false; hint.style.display='none';
+      processLoop();
+    }catch(e){ console.error(e); setDot(permSt,'bad'); alert('Нужен HTTPS и разрешение камеры.'); }
+  }
+  function stopCamera(){ running=false; if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } video.srcObject=null; startBtn.disabled=false; stopBtn.disabled=true; }
+  startBtn.onclick=startCamera; stopBtn.onclick=stopCamera;
 
-            } catch (error) {
-                console.error('Ошибка доступа к камере:', error);
-                statusElement.textContent = 'Ошибка: ' + error.message;
-                
-                if (error.name === 'NotAllowedError') {
-                    statusElement.textContent = 'Доступ к камере запрещен. Разрешите в настройках браузера.';
-                } else if (error.name === 'NotFoundError') {
-                    statusElement.textContent = 'Камера не найдена.';
-                } else if (error.name === 'NotSupportedError') {
-                    statusElement.textContent = 'Камера не поддерживается браузером.';
-                }
+  // ---------- Three scene ----------
+  const glCanvas=$('#gl');
+  const renderer=new THREE.WebGLRenderer({canvas:glCanvas, antialias:true, alpha:true, powerPreference:'high-performance'});
+  const scene=new THREE.Scene();
+  const camera=new THREE.OrthographicCamera();
+  const hemi=new THREE.HemisphereLight(0xffffff,0x181a26,1.0); scene.add(hemi);
+  const dir=new THREE.DirectionalLight(0xffffff,0.7); dir.position.set(0.3,0.6,1.2); scene.add(dir);
+
+  function resize(){
+    const w=glCanvas.clientWidth=innerWidth, h=glCanvas.clientHeight=innerHeight;
+    renderer.setSize(w,h,false); renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+    camera.left=-w/2; camera.right=w/2; camera.top=h/2; camera.bottom=-h/2; camera.near=-3000; camera.far=3000; camera.updateProjectionMatrix();
+    setupDrawCanvas();
+  } window.addEventListener('resize', resize);
+
+  // ---------- Ghost material (Fresnel + additive) ----------
+  function makeGhostMaterial(color){
+    const mat = new THREE.ShaderMaterial({
+      transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide,
+      uniforms:{ uColor:{value:new THREE.Color(color)}, uAlpha:{value:0.0} },
+      vertexShader:`varying vec3 vN; varying vec3 vW; void main(){ vN = normalize(normalMatrix*normal); vec4 wPos = modelMatrix*vec4(position,1.0); vW = wPos.xyz; gl_Position = projectionMatrix*viewMatrix*wPos; }`,
+      fragmentShader:`varying vec3 vN; varying vec3 vW; uniform vec3 uColor; uniform float uAlpha; void main(){ vec3 V = normalize(cameraPosition - vW); float fres = pow(1.0 - max(dot(normalize(vN), V), 0.0), 2.0); float glow = smoothstep(0.0,1.0,fres);
+        vec3 col = uColor*(0.35 + 0.9*glow);
+        float a = clamp(0.18 + 0.75*glow, 0.0, 1.0)*uAlpha;
+        if(a<0.02) discard; gl_FragColor = vec4(col, a);
+      }`
+    });
+    return mat;
+  }
+  function makeJointMaterial(){ return new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.35 }); }
+
+  // ---------- Hand groups (cylinders + joints) ----------
+  const CONNECTIONS=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20]];
+  function makeHandGroup(color){
+    const g=new THREE.Group();
+    const ghost=makeGhostMaterial(color), joint=makeJointMaterial();
+    const cylinders=[], spheres=[];
+    for(let i=0;i<CONNECTIONS.length;i++){
+      const geom=new THREE.CapsuleGeometry(7, 1, 6, 10); // более «мясистые» фаланги
+      const m=new THREE.Mesh(geom, ghost); m.castShadow=false; m.receiveShadow=false; g.add(m); cylinders.push(m);
+    }
+    for(let i=0;i<21;i++){ const s=new THREE.Mesh(new THREE.SphereGeometry(8,16,12), joint); g.add(s); spheres.push(s); }
+    g.userData={ cylinders, spheres, ghost, joint, visibleAlpha:0 };
+    scene.add(g); return g;
+  }
+  const leftHand=makeHandGroup(0x8ad1ff), rightHand=makeHandGroup(0xff9aa2);
+
+  // ---------- Drawing ----------
+  const drawCanvas=$('#draw'); const ctx=drawCanvas.getContext('2d');
+  let strokes=[], currentStroke=null; let eraseMode=false;
+  function setupDrawCanvas(){ const dpr=Math.min(devicePixelRatio||1,2); drawCanvas.width=Math.floor(innerWidth*dpr); drawCanvas.height=Math.floor(innerHeight*dpr); drawCanvas.style.width=innerWidth+'px'; drawCanvas.style.height=innerHeight+'px'; ctx.setTransform(dpr,0,0,dpr,0,0); redraw(); }
+  function redraw(){ ctx.clearRect(0,0,innerWidth,innerHeight); for(const s of strokes){ ctx.globalCompositeOperation=s.erase?'destination-out':'source-over'; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle=s.color; ctx.lineWidth=s.size; ctx.beginPath(); for(let i=1;i<s.pts.length;i++){ const a=s.pts[i-1], b=s.pts[i]; ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);} ctx.stroke(); } }
+  clearBtn.onclick=()=>{ strokes.length=0; redraw(); };
+  saveBtn.onclick=()=>{ const a=document.createElement('a'); a.download='drawing.png'; a.href=drawCanvas.toDataURL('image/png'); a.click(); };
+  undoBtn.onclick=()=>{ strokes.pop(); redraw(); };
+  eraserBtn.onclick=()=>{ eraseMode=!eraseMode; eraserBtn.classList.toggle('active', eraseMode); };
+
+  // ---------- Cursor & events ----------
+  const cursorEl=$('#cursor');
+  function setCursor(x,y,show=true){ if(!show){ cursorEl.hidden=true; return; } cursorEl.hidden=false; cursorEl.style.left=x+'px'; cursorEl.style.top=y+'px'; }
+  function normToScreen(x,y){ const w=innerWidth,h=innerHeight; const mx = mirrorChk.checked ? (1-x) : x; return [mx*w, y*h]; }
+  function dist(a,b){ const dx=a.x-b.x, dy=a.y-b.y, dz=(a.z||0)-(b.z||0); return Math.hypot(dx,dy,dz); }
+
+  // Pointer injection
+  let dragEl=null, dragging=false; const PID=13;
+  function pe(el,type,x,y){ el.dispatchEvent(new PointerEvent(type,{pointerId:PID,pointerType:'touch',clientX:x,clientY:y,bubbles:true,cancelable:true})); }
+  function startDrag(x,y){ const el=document.elementFromPoint(x,y)||document.body; dragEl=el; pe(el,'pointerover',x,y); pe(el,'pointerenter',x,y); pe(el,'pointerdown',x,y); dragging=true; }
+  function moveDrag(x,y){ if(dragEl) pe(dragEl,'pointermove',x,y); }
+  function endDrag(x,y){ if(!dragEl) return; pe(dragEl,'pointerup',x,y); dragging=false; dragEl=null; }
+  function rightClick(x,y){ const el=document.elementFromPoint(x,y)||document.body; el.dispatchEvent(new MouseEvent('contextmenu',{clientX:x,clientY:y,bubbles:true,cancelable:true})); }
+  function dblClick(x,y){ const el=document.elementFromPoint(x,y)||document.body; el.dispatchEvent(new MouseEvent('dblclick',{clientX:x,clientY:y,bubbles:true,cancelable:true})); }
+
+  // ---------- Gesture state ----------
+  const handS=[ // 0-left, 1-right
+    {present:0, missing:0, visible:false, sm:null, pinch:false, pinchT:0, midPinch:false, ringPinch:false, lastPinchTime:0},
+    {present:0, missing:0, visible:false, sm:null, pinch:false, pinchT:0, midPinch:false, ringPinch:false, lastPinchTime:0},
+  ];
+  const PINCH_ON=()=>Number(pinchRange.value); const PINCH_OFF=()=>Number(pinchRange.value)+0.012; // гистерезис
+
+  // ---------- Mediapipe ----------
+  let mp=null, busy=false; setDot(modelSt,'warn');
+  mp=new Hands({ locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+  mp.setOptions({ maxNumHands:2, modelComplexity:1, minDetectionConfidence:0.7, minTrackingConfidence:0.7 });
+  mp.onResults(onResults); setDot(modelSt,'ok');
+
+  async function processLoop(){ if(!running) return; if(!busy){ busy=true; try{ await mp.send({image:video}); }catch(e){ console.error(e); } busy=false; } requestAnimationFrame(processLoop); }
+
+  // Map to roles by label or x
+  function rolesFrom(results){ const out=[null,null]; const hs=results.multiHandLandmarks||[]; for(let i=0;i<hs.length;i++){ const lm=hs[i]; const label=results.multiHandedness?.[i]?.label || (lm[0].x<0.5?'Left':'Right'); out[label==='Left'?0:1]=lm; } return out; }
+
+  // Smooth helper
+  function lerp(a,b,t){ return a+(b-a)*t; } function sp(prev,next,a){ if(!prev) return {...next}; return {x:lerp(prev.x,next.x,a), y:lerp(prev.y,next.y,a), z:lerp(prev.z,next.z,a)}; }
+  function fadeGroup(g, target){ const ud=g.userData; ud.visibleAlpha += (target-ud.visibleAlpha)*0.2; ud.ghost.uniforms.uAlpha.value = ud.visibleAlpha; g.visible = ud.visibleAlpha>0.02; }
+
+  // Two-hand zoom state
+  let prevZoomDist=null, pageScale=1; const PAGE_MIN=0.75, PAGE_MAX=1.75;
+  function setPageScale(s){ pageScale=Math.max(PAGE_MIN, Math.min(PAGE_MAX, s)); document.documentElement.style.transform=`scale(${pageScale})`; document.documentElement.style.transformOrigin='50% 50%'; }
+
+  // Drawing helpers
+  function addPointToStroke(x,y){ if(!currentStroke){ currentStroke={ color: eraseMode?'#000000': colorPick.value, size: Number(sizeRange.value), erase: eraseMode, pts: [] }; strokes.push(currentStroke); } const last=currentStroke.pts[currentStroke.pts.length-1]; if(!last || (Math.hypot(x-last.x,y-last.y)>0.5)) currentStroke.pts.push({x,y}); }
+  function endStroke(){ currentStroke=null; }
+
+  // Main results
+  let lastNow=performance.now(), acc=0, frames=0;
+  function onResults(res){
+    const roles=rolesFrom(res); const groups=[leftHand,rightHand];
+    for(let i=0;i<2;i++){
+      const lm=roles[i], S=handS[i], G=groups[i];
+      if(lm){
+        S.present++; S.missing=0; S.visible=true; const a=1 - Math.max(0.05, 1-Number(smoothRange.value));
+        if(!S.sm) S.sm = lm.map(p=>({x:p.x,y:p.y,z:p.z})); for(let j=0;j<21;j++) S.sm[j]=sp(S.sm[j], lm[j], a);
+        // Build 3D
+        updateHand(G, S.sm);
+        fadeGroup(G, 1);
+        // Gestures
+        const tip=S.sm[8], thumb=S.sm[4], mid=S.sm[12], ring=S.sm[16];
+        const [cx,cy]=normToScreen(tip.x, tip.y);
+        const d = dist(tip,thumb), dMid=dist(mid,thumb), dRing=dist(ring,thumb);
+        const prevPin=S.pinch, prevMid=S.midPinch, prevRing=S.ringPinch;
+        if(!prevPin && d<PINCH_ON()){ S.pinch=true; S.pinchT=performance.now(); }
+        if(prevPin && d>PINCH_OFF()){ S.pinch=false; }
+        if(!prevMid && dMid<PINCH_ON()){ S.midPinch=true; }
+        if(prevMid && dMid>PINCH_OFF()){ S.midPinch=false; }
+        if(!prevRing && dRing<PINCH_ON()){ S.ringPinch=true; }
+        if(prevRing && dRing>PINCH_OFF()){ S.ringPinch=false; }
+
+        if(i===1){ // RIGHT — cursor & draw/control
+          setCursor(cx,cy,true);
+          if(mode==='draw'){
+            // middle pinch -> eraser mode while held
+            eraseMode = S.midPinch || eraserBtn.classList.contains('active');
+            if(S.pinch){ addPointToStroke(cx,cy); redraw(); }
+            else if(currentStroke){ endStroke(); }
+          } else { // control mode
+            // ring pinch -> right click
+            if(!prevRing && S.ringPinch){ rightClick(cx,cy); }
+            // click/drag
+            if(!prevPin && S.pinch){
+              const now=performance.now(); if(now - S.lastPinchTime < 280){ dblClick(cx,cy); } S.lastPinchTime=now;
             }
+            if(S.pinch){ if(!dragging && performance.now()-S.pinchT>180) startDrag(cx,cy); if(dragging) moveDrag(cx,cy); }
+            else { if(dragging){ endDrag(cx,cy); } else { const t=performance.now()-S.pinchT; if(t>30 && t<180){ const el=document.elementFromPoint(cx,cy)||document.body; el.click?.(); } } }
+          }
+        } else { // LEFT — scroll
+          if(S.pinch){ if(S._lastY==null) S._lastY=cy; const dy=cy - S._lastY; window.scrollBy({top:dy*0.9, behavior:'auto'}); S._lastY=cy; } else { S._lastY=null; }
         }
+      } else {
+        S.missing++; if(S.missing>8) S.visible=false; fadeGroup(G, S.visible?0.6:0); if(i===1) setCursor(0,0,false); if(i===1 && dragging) endDrag(innerWidth/2, innerHeight/2);
+        // end drawing if lost
+        if(i===1 && currentStroke) endStroke();
+      }
+    }
 
-        // Three.js инициализация
-        function initThreeJS() {
-            scene = new THREE.Scene();
-            
-            const threeCanvas = document.getElementById('threeCanvas');
-            renderer = new THREE.WebGLRenderer({ 
-                canvas: threeCanvas,
-                alpha: true 
-            });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setClearColor(0x000000, 0);
+    // Two-hand zoom when both pinching
+    if(handS[0].visible && handS[1].visible && handS[0].pinch && handS[1].pinch){
+      const L=handS[0].sm[0], R=handS[1].sm[0]; // ладони
+      const pL=normToScreen(L.x,L.y), pR=normToScreen(R.x,R.y);
+      const dNow=Math.hypot(pL[0]-pR[0], pL[1]-pR[1]);
+      if(prevZoomDist==null) prevZoomDist=dNow; else { const ratio=dNow/prevZoomDist; if(Math.abs(ratio-1)>0.01){ setPageScale(pageScale*ratio); prevZoomDist=dNow; } }
+    } else { prevZoomDist=null; }
 
-            camera3d = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera3d.position.z = 2;
+    renderer.render(scene,camera);
 
-            // Освещение
-            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
-            scene.add(ambientLight);
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            directionalLight.position.set(1, 1, 1);
-            scene.add(directionalLight);
+    // FPS
+    const now=performance.now(); const dt=now-lastNow; lastNow=now; acc+=dt; frames++; if(acc>=500){ const fps=Math.round(1000*frames/acc); fpsTxt.textContent=`FPS — ${fps}`; setDot(fpsSt, fps>=24?'ok':(fps>=14?'warn':'bad')); acc=0; frames=0; }
+  }
 
-            animate();
-        }
+  function updateHand(group, lm){
+    const w=innerWidth, h=innerHeight, depth=650; const mirror=mirrorChk.checked; const ud=group.userData; const {cylinders,spheres}=ud;
+    const P=new Array(21);
+    for(let j=0;j<21;j++){
+      const p=lm[j]; const sx=(mirror?(1-p.x):p.x)*w - w/2; const sy=(0.5 - (p.y-0.5))*h; const sz=-p.z*depth; P[j]=new THREE.Vector3(sx,sy,sz); spheres[j].position.copy(P[j]); spheres[j].scale.setScalar(1.0);
+    }
+    for(let i=0;i<CONNECTIONS.length;i++){
+      const [a,b]=CONNECTIONS[i]; const A=P[a], B=P[b]; const m=cylinders[i]; const dir=new THREE.Vector3().subVectors(B,A); const len=Math.max(2,dir.length()); const mid=new THREE.Vector3().addVectors(A,B).multiplyScalar(0.5); const q=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dir.clone().normalize()); m.position.copy(mid); m.quaternion.copy(q); m.scale.set(1, len, 1);
+    }
+  }
 
-        // MediaPipe инициализация
-        function initMediaPipe() {
-            hands = new Hands({
-                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-            });
+  // ---------- Boot ----------
+  function boot(){ resize(); renderer.setClearColor(0x000000,0); }
+  boot();
 
-            hands.setOptions({
-                maxNumHands: 2,
-                modelComplexity: 1,
-                minDetectionConfidence: 0.7,
-                minTrackingConfidence: 0.5
-            });
-
-            hands.onResults(onResults);
-            
-            // Запуск обработки кадров
-            processFrame();
-        }
-
-        // Обработка кадров
-        async function processFrame() {
-            if (videoElement.readyState >= 2) {
-                await hands.send({ image: videoElement });
-            }
-            requestAnimationFrame(processFrame);
-        }
-
-        // Обработка результатов MediaPipe
-        function onResults(results) {
-            canvasCtx.save();
-            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            
-            if (results.multiHandLandmarks) {
-                statusElement.textContent = `Обнаружено рук: ${results.multiHandLandmarks.length}`;
-                
-                for (let i = 0; i < results.multiHandLandmarks.length; i++) {
-                    const landmarks = results.multiHandLandmarks[i];
-                    const handedness = results.multiHandedness[i].label;
-                    
-                    updateHandMesh(landmarks, handedness, i);
-                    
-                    const gesture = detectGesture(landmarks);
-                    processGesture(gesture, landmarks, handedness);
-                    
-                    const confidence = Math.round(results.multiHandedness[i].score * 100);
-                    confidenceElement.textContent = `${confidence}%`;
-                }
-            } else {
-                statusElement.textContent = 'Покажите руки камере';
-                confidenceElement.textContent = '0%';
-                
-                // Удаляем 3D модели если руки не видны
-                handMeshes.forEach(mesh => {
-                    if (mesh.parent) scene.remove(mesh);
-                });
-                handMeshes = [];
-            }
-
-            canvasCtx.restore();
-        }
-
-        // Создание 3D модели руки
-        function createHandMesh(handedness) {
-            const geometry = new THREE.SphereGeometry(0.02, 8, 6);
-            const material = new THREE.MeshPhongMaterial({ 
-                color: handedness === 'Right' ? 0x00ff88 : 0xff8800,
-                transparent: true,
-                opacity: 0.7
-            });
-            
-            const handGroup = new THREE.Group();
-            
-            // Создаем 21 точку для ландмарков руки
-            for (let i = 0; i < 21; i++) {
-                const sphere = new THREE.Mesh(geometry, material.clone());
-                handGroup.add(sphere);
-            }
-
-            scene.add(handGroup);
-            return handGroup;
-        }
-
-        // Обновление 3D модели руки
-        function updateHandMesh(landmarks, handedness, index) {
-            while (handMeshes.length <= index) {
-                handMeshes.push(createHandMesh(handedness));
-            }
-
-            const handMesh = handMeshes[index];
-            const spheres = handMesh.children;
-
-            landmarks.forEach((landmark, i) => {
-                if (spheres[i]) {
-                    const x = (landmark.x - 0.5) * 4;
-                    const y = -(landmark.y - 0.5) * 3;
-                    const z = -landmark.z * 2;
-                    
-                    spheres[i].position.set(x, y, z);
-                }
-            });
-        }
-
-        // Определение жеста
-        function detectGesture(landmarks) {
-            const thumbTip = landmarks[4];
-            const indexTip = landmarks[8];
-            const middleTip = landmarks[12];
-            const ringTip = landmarks[16];
-            const pinkyTip = landmarks[20];
-            const wrist = landmarks[0];
-
-            const thumbIndexDist = Math.sqrt(
-                Math.pow(thumbTip.x - indexTip.x, 2) +
-                Math.pow(thumbTip.y - indexTip.y, 2)
-            );
-
-            const fingersUp = [
-                thumbTip.y < wrist.y - 0.05,
-                indexTip.y < wrist.y - 0.05,
-                middleTip.y < wrist.y - 0.05,
-                ringTip.y < wrist.y - 0.05,
-                pinkyTip.y < wrist.y - 0.05
-            ];
-
-            const fingersUpCount = fingersUp.filter(Boolean).length;
-
-            if (thumbIndexDist < 0.05) return 'pinch';
-            if (fingersUpCount <= 1) return 'closed';
-            if (fingersUpCount === 1 && fingersUp[1]) return 'point';
-            if (fingersUpCount >= 4) return 'open';
-            
-            return 'unknown';
-        }
-
-        // Обработка жестов
-        function processGesture(gesture, landmarks, handedness) {
-            const indexTip = landmarks[8];
-            const screenX = indexTip.x * window.innerWidth;
-            const screenY = indexTip.y * window.innerHeight;
-
-            switch (gesture) {
-                case 'closed':
-                    if (handedness === 'Right') {
-                        drawOnCanvas(screenX, screenY, true);
-                    }
-                    break;
-                    
-                case 'point':
-                    updateCursor(screenX, screenY);
-                    break;
-                    
-                case 'pinch':
-                    selectColorByPosition(screenX, screenY);
-                    break;
-                    
-                case 'open':
-                    isDrawing = false;
-                    lastDrawPoint = null;
-                    break;
-            }
-        }
-
-        // Рисование на canvas
-        function drawOnCanvas(x, y, shouldDraw) {
-            if (shouldDraw && lastDrawPoint) {
-                drawingCtx.strokeStyle = currentColor;
-                drawingCtx.lineWidth = 5;
-                drawingCtx.lineCap = 'round';
-                drawingCtx.beginPath();
-                drawingCtx.moveTo(lastDrawPoint.x, lastDrawPoint.y);
-                drawingCtx.lineTo(x, y);
-                drawingCtx.stroke();
-            }
-            
-            if (shouldDraw) {
-                lastDrawPoint = { x, y };
-            } else {
-                lastDrawPoint = null;
-            }
-        }
-
-        // Обновление курсора
-        function updateCursor(x, y) {
-            let cursor = document.getElementById('virtualCursor');
-            if (!cursor) {
-                cursor = document.createElement('div');
-                cursor.id = 'virtualCursor';
-                cursor.style.cssText = `
-                    position: fixed;
-                    width: 20px;
-                    height: 20px;
-                    background: rgba(0, 255, 136, 0.8);
-                    border-radius: 50%;
-                    pointer-events: none;
-                    z-index: 9999;
-                    transform: translate(-50%, -50%);
-                    box-shadow: 0 0 15px rgba(0, 255, 136, 0.8);
-                `;
-                document.body.appendChild(cursor);
-            }
-            
-            cursor.style.left = x + 'px';
-            cursor.style.top = y + 'px';
-        }
-
-        // Выбор цвета по позиции
-        function selectColorByPosition(x, y) {
-            const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff'];
-            const colorIndex = Math.floor((x / window.innerWidth) * colors.length);
-            if (colors[colorIndex]) {
-                currentColor = colors[colorIndex];
-            }
-        }
-
-        // Анимация Three.js
-        function animate() {
-            requestAnimationFrame(animate);
-            
-            handMeshes.forEach((mesh) => {
-                if (mesh && mesh.parent) {
-                    mesh.rotation.y += 0.005;
-                }
-            });
-            
-            renderer.render(scene, camera3d);
-        }
-
-        // Утилиты для управления
-        function setDrawColor(color) {
-            currentColor = color;
-        }
-
-        function clearCanvas() {
-            drawingCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
-        }
-
-        // Изменение размеров
-        function resizeCanvases() {
-            canvasElement.width = window.innerWidth;
-            canvasElement.height = window.innerHeight;
-            drawingCanvas.width = window.innerWidth;
-            drawingCanvas.height = window.innerHeight;
-            
-            if (renderer) {
-                renderer.setSize(window.innerWidth, window.innerHeight);
-                camera3d.aspect = window.innerWidth / window.innerHeight;
-                camera3d.updateProjectionMatrix();
-            }
-        }
-
-        // Кнопка запуска
-        startButton.addEventListener('click', async () => {
-            startButton.style.display = 'none';
-            controlPanel.style.display = 'block';
-            gestureInfo.style.display = 'block';
-            
-            resizeCanvases();
-            initThreeJS();
-            await initCamera();
-        });
-
-        window.addEventListener('resize', resizeCanvases);
-    </script>
+  // ---------- Demo btn ----------
+  demoBtn.onclick=()=>{ demoBtn.classList.add('hit'); setTimeout(()=>demoBtn.classList.remove('hit'), 280); };
+  </script>
 </body>
 </html>
