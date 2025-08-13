@@ -78,11 +78,12 @@
   <div id="toast"></div>
   <video id="video" playsinline muted></video>
 
-  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-
   <script type="module">
   (async () => {
-    const { FilesetResolver, FaceLandmarker, PoseLandmarker, HandLandmarker } = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.mjs');
+    // ✅ Модульные импорты — никаких гонок и «uninitialized variable»
+    const THREE = await import('https://unpkg.com/three@0.160.0/build/three.module.js');
+    const vision = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.mjs');
+    const { FilesetResolver, FaceLandmarker, PoseLandmarker, HandLandmarker } = vision;
 
     // --- UI ---
     const $=s=>document.querySelector(s);
@@ -148,16 +149,18 @@
     function normToScreen(x,y){ const w=innerWidth,h=innerHeight; const mx = mirrorChk.checked ? (1-x) : x; return [mx*w, y*h]; }
     const lerp=(a,b,t)=>a+(b-a)*t; const sp=(p,n,a)=>!p?{...n}:{x:lerp(p.x,n.x,a),y:lerp(p.y,n.y,a),z:lerp(p.z,n.z,a)};
 
-    // --- Models init (ALL-SETTLED, без ложных «нужен доступ») ---
+    // --- Models init (ALL-SETTLED, надёжно) ---
     setDot(modelSt,'warn'); mdlTxt.textContent='Модели — загружаются…';
     const fileset=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm');
     let faceLm=null, poseLm=null, handLm=null;
-    const results=await Promise.allSettled([
-      FaceLandmarker.createFromOptions(fileset,{ baseOptions:{ modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task' }, runningMode:'VIDEO', numFaces:1 }),
-      PoseLandmarker.createFromOptions(fileset,{ baseOptions:{ modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task' }, runningMode:'VIDEO', numPoses:1 }),
-      HandLandmarker.createFromOptions(fileset,{ baseOptions:{ modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task' }, runningMode:'VIDEO', numHands:2 })
-    ]);
-    if(results[0].status==='fulfilled') faceLm=results[0].value; if(results[1].status==='fulfilled') poseLm=results[1].value; if(results[2].status==='fulfilled') handLm=results[2].value;
+    try{
+      const results=await Promise.allSettled([
+        FaceLandmarker.createFromOptions(fileset,{ baseOptions:{ modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task' }, runningMode:'VIDEO', numFaces:1 }),
+        PoseLandmarker.createFromOptions(fileset,{ baseOptions:{ modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task' }, runningMode:'VIDEO', numPoses:1 }),
+        HandLandmarker.createFromOptions(fileset,{ baseOptions:{ modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task' }, runningMode:'VIDEO', numHands:2 })
+      ]);
+      if(results[0].status==='fulfilled') faceLm=results[0].value; if(results[1].status==='fulfilled') poseLm=results[1].value; if(results[2].status==='fulfilled') handLm=results[2].value;
+    }catch(e){ /* ignore */ }
     const okCount=[faceLm,poseLm,handLm].filter(Boolean).length; mdlTxt.textContent=`Модели — ${okCount}/3`; setDot(modelSt, okCount? 'ok':'bad'); if(!okCount) showToast('Модели не загрузились. Проверь сеть/блокировщики.');
 
     // --- State ---
