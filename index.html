@@ -3,34 +3,43 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>MAX Hand Control 3D — стабильный трекинг, призрачная рука, рисование</title>
+  <title>Holistic 3D — лицо+тело+руки | призрачный 3D без видео</title>
   <style>
-    :root { --bg:#05070b; --txt:#e6edf3; --glass:rgba(255,255,255,.06); --acc1:#8ad1ff; --acc2:#ff9aa2; --good:#7CFC00; --warn:#ffb74d; --bad:#ff6b6b; }
+    :root{
+      --bg: #06080f;
+      --ink: #eaf2ff;
+      --glass: rgba(255,255,255,.07);
+      --border: rgba(255,255,255,.16);
+      --acc1:#8ad1ff; --acc2:#ff9aa2; --acc3:#b28cff;
+      --good:#7CFC00; --warn:#ffb74d; --bad:#ff6b6b;
+    }
     *{box-sizing:border-box}
     html,body{height:100%}
-    body{margin:0;background:radial-gradient(1200px 800px at 80% -10%, #0e1220, #05070b);color:var(--txt);font:14px/1.35 Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;overflow:hidden}
-    /* фон-сетка чтобы точно не было «чёрного экрана» */
+    body{margin:0; background: radial-gradient(1200px 800px at 80% -10%, #0f1427, var(--bg)); color:var(--ink); font:14px/1.35 Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial; overflow:hidden}
     body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.06;background-image:linear-gradient(0deg,transparent 24%,#fff 25%,#fff 26%,transparent 27%,transparent 74%,#fff 75%,#fff 76%,transparent 77%),linear-gradient(90deg,transparent 24%,#fff 25%,#fff 26%,transparent 27%,transparent 74%,#fff 75%,#fff 76%,transparent 77%);background-size:32px 32px}
 
     #stage{position:absolute;inset:0;overflow:hidden}
-    #gl,#draw{position:absolute;inset:0;display:block;pointer-events:none}
+    #gl{position:absolute;inset:0;display:block;pointer-events:none}
     #cursor{position:absolute;width:18px;height:18px;border-radius:999px;background:#fff;opacity:.9;transform:translate(-50%,-50%);pointer-events:none;box-shadow:0 0 18px rgba(255,255,255,.7);mix-blend-mode:difference}
 
+    /* UI */
     #ui{position:fixed;left:14px;bottom:14px;right:14px;z-index:10;display:grid;gap:10px;grid-template-columns:repeat(12,1fr)}
-    .card{grid-column:1/-1;background:var(--glass);border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:12px;backdrop-filter:blur(10px);box-shadow:0 12px 30px rgba(0,0,0,.25) inset}
+    .card{grid-column:1/-1;background:var(--glass);border:1px solid var(--border);border-radius:18px;padding:12px 12px;backdrop-filter: blur(10px);box-shadow:0 12px 30px rgba(0,0,0,.25) inset}
     .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-    button,.seg,select{appearance:none;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:#fff;padding:10px 14px;border-radius:12px;cursor:pointer}
+    button,.seg,select{appearance:none;border:1px solid var(--border);background:rgba(255,255,255,.08);color:#fff;padding:10px 14px;border-radius:12px;cursor:pointer}
     button:disabled{opacity:.55;cursor:not-allowed}
     label{display:inline-flex;align-items:center;gap:8px;opacity:.95}
     input[type="range"]{width:160px}
-    input[type="color"]{width:40px;height:36px;padding:0;border:1px solid rgba(255,255,255,.18);border-radius:10px;background:transparent}
-    .status{display:inline-flex;align-items:center;gap:6px;padding:8px 10px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12)}
-    .dot{width:10px;height:10px;border-radius:999px;background:#888;box-shadow:0 0 10px currentColor}
+    .status{display:inline-flex;align-items:center;gap:6px;padding:8px 10px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid var(--border)}
+    .dot{width:10px;height:10px;border-radius:999px;background:#8892b0;box-shadow:0 0 10px currentColor}
     .ok{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+
     .demo{position:fixed;top:14px;right:14px;z-index:12;padding:12px 16px;font-weight:700}
     .demo.hit{animation:pop .28s ease}@keyframes pop{0%{transform:scale(1)}50%{transform:scale(1.08)}100%{transform:scale(1)}}
+
     #hint{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:9;text-align:center;opacity:.9;pointer-events:none}
     #hint h1{margin:0 0 8px;font-size:22px;letter-spacing:.2px}#hint p{margin:0;font-size:13px;opacity:.9}
+
     video#video{position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0}
     #debug{position:fixed;left:12px;top:12px;z-index:15;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.2);padding:8px 10px;border-radius:10px;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;max-width:60vw;white-space:pre-wrap}
     @media (min-width:820px){.card.controls{grid-column:1/span 8}.card.status-bar{grid-column:9/-1}}
@@ -39,198 +48,190 @@
 <body>
   <div id="stage">
     <canvas id="gl"></canvas>
-    <canvas id="draw"></canvas>
     <div id="cursor" hidden></div>
   </div>
 
-  <button id="demoBtn" class="demo hittable" title="Правой рукой: щипок — клик / удержание — drag / двойной щипок — двойной клик">Жми рукой</button>
+  <button id="demoBtn" class="demo hittable" title="Правая рука: щипок — клик / удержание — drag / двойной щипок — двойной клик">Жми рукой</button>
 
   <div id="ui">
     <div class="card controls">
       <div class="row">
         <button id="startBtn">▶️ Камера</button>
         <button id="stopBtn" disabled>⏹ Стоп</button>
-        <button id="clearBtn">🧹 Очистить</button>
-        <button id="saveBtn">💾 PNG</button>
-        <div class="seg" id="modeSeg"><button data-mode="control">🖱️ Управление</button><button data-mode="draw" class="active">✍️ Рисование</button></div>
+        <div class="seg" id="visSeg">
+          <label><input type="checkbox" id="faceChk" checked> Лицо</label>
+          <label><input type="checkbox" id="poseChk" checked> Тело</label>
+          <label><input type="checkbox" id="handsChk" checked> Руки</label>
+        </div>
         <label><input id="mirrorChk" type="checkbox" checked> Зеркалить</label>
-        <label>Порог щипка <input id="pinchRange" type="range" min="0.010" max="0.090" step="0.005" value="0.030"></label>
         <label>Стабилизация <input id="smoothRange" type="range" min="0" max="0.95" step="0.05" value="0.55"></label>
       </div>
-      <div class="row">
-        <label>Цвет <input type="color" id="colorPick" value="#ffffff"></label>
-        <label>Толщина <input id="sizeRange" type="range" min="2" max="30" step="1" value="8"></label>
-        <button id="undoBtn">↶ Отменить</button>
-        <button id="eraserBtn">🩹 Ластик</button>
-      </div>
-      <div class="row" style="opacity:.9"><div>Жесты: Правая — курсор/рисование (щипок=клик, удержание=drag, двойной=двойной клик, безымянный+большой=правый клик). Левая — скролл. Две руки-щипок — зум страницы.</div></div>
+      <div class="row" style="opacity:.9"><div>Видео не показывается. На сцене — «призрачные» 3D-модели: 468-точечное лицо, скелет тела (33 точки), и обе руки.</div></div>
     </div>
-    <div class="card status-bar"><div class="row"><div class="status" id="permSt"><span class="dot"></span><span>Камера</span></div><div class="status" id="modelSt"><span class="dot"></span><span>Модель</span></div><div class="status" id="fpsSt"><span class="dot"></span><span id="fpsTxt">FPS — …</span></div></div></div>
+    <div class="card status-bar"><div class="row"><div class="status" id="permSt"><span class="dot"></span><span>Камера</span></div><div class="status" id="modelSt"><span class="dot"></span><span>Модели</span></div><div class="status" id="fpsSt"><span class="dot"></span><span id="fpsTxt">FPS — …</span></div></div></div>
   </div>
 
-  <div id="hint"><h1>Дай доступ к камере и поднеси руки в кадр</h1><p>Видео не показывается. Видны «призрачные» 3D-руки. Управляй сайтом и рисуй щипком.</p></div>
+  <div id="hint"><h1>Дай доступ к камере и поднеси лицо/тело/руки в кадр</h1><p>Управляй сайтом руками: щипок — клик, удержание — drag, левый щипок — скролл, обе руки — зум.</p></div>
 
   <div id="debug" hidden></div>
   <video id="video" playsinline muted></video>
 
-  <!-- three.js (глобальный THREE) -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 
-  <!-- Весь JS ниже — как модуль. Используем новое API MediaPipe Tasks Vision (HandLandmarker) -->
   <script type="module">
-  (async () => {
-    // Import MediaPipe Tasks (as module)
-    const { HandLandmarker, FilesetResolver } = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.mjs');
+    (async () => {
+      const { FilesetResolver, FaceLandmarker, PoseLandmarker, HandLandmarker } = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.mjs');
 
-    // ---------- UI refs ----------
-    const $ = s=>document.querySelector(s);
-    const startBtn=$('#startBtn'), stopBtn=$('#stopBtn'), clearBtn=$('#clearBtn'), saveBtn=$('#saveBtn');
-    const mirrorChk=$('#mirrorChk'), pinchRange=$('#pinchRange'), smoothRange=$('#smoothRange');
-    const permSt=$('#permSt'), modelSt=$('#modelSt'), fpsTxt=$('#fpsTxt'), fpsSt=$('#fpsSt'), hint=$('#hint');
-    const colorPick=$('#colorPick'), sizeRange=$('#sizeRange'), undoBtn=$('#undoBtn'), eraserBtn=$('#eraserBtn');
-    const modeSeg=$('#modeSeg'); let mode='draw';
-    const debug=$('#debug'); const log=(...a)=>{ debug.hidden=false; debug.textContent='LOG > '+a.join(' '); };
-    modeSeg.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ modeSeg.querySelectorAll('button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); mode=b.dataset.mode; }));
-    const setDot=(el,cls)=>{ el.querySelector('.dot').className='dot '+({ok:'ok',warn:'warn',bad:'bad'}[cls]||''); };
+      // ---- UI ----
+      const $ = s=>document.querySelector(s);
+      const startBtn=$('#startBtn'), stopBtn=$('#stopBtn');
+      const faceChk=$('#faceChk'), poseChk=$('#poseChk'), handsChk=$('#handsChk');
+      const mirrorChk=$('#mirrorChk'), smoothRange=$('#smoothRange');
+      const permSt=$('#permSt'), modelSt=$('#modelSt'), fpsTxt=$('#fpsTxt'), fpsSt=$('#fpsSt'), hint=$('#hint');
+      const debug=$('#debug'); const log=(...a)=>{ debug.hidden=false; debug.textContent='LOG > '+a.join(' '); };
+      const setDot=(el,cls)=>{ el.querySelector('.dot').className='dot '+({ok:'ok',warn:'warn',bad:'bad'}[cls]||''); };
 
-    // ---------- Camera ----------
-    const video=$('#video'); let stream=null, running=false;
-    async function startCamera(){
-      try{
-        setDot(permSt,'warn');
-        stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30,max:60}},audio:false});
-        video.srcObject=stream; await video.play(); setDot(permSt,'ok');
-        await visionReady; // ⬅️ дождаться модели, иначе TDZ/неинициализированная переменная
-        running=true; startBtn.disabled=true; stopBtn.disabled=false; hint.style.display='none';
-        startLoop();
-      }catch(e){ console.error(e); setDot(permSt,'bad'); log('Camera error:', e?.message||e); alert('Нужен HTTPS и разрешение камеры.'); }
-    }
-    function stopCamera(){ running=false; if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } video.srcObject=null; startBtn.disabled=false; stopBtn.disabled=true; }
-    startBtn.onclick=startCamera; stopBtn.onclick=stopCamera;
-
-    // ---------- Three scene ----------
-    const glCanvas=$('#gl');
-    const renderer=new THREE.WebGLRenderer({canvas:glCanvas,antialias:true,alpha:true,powerPreference:'high-performance'});
-    const scene=new THREE.Scene();
-    const cam=new THREE.OrthographicCamera();
-    const hemi=new THREE.HemisphereLight(0xffffff,0x181a26,1.0); scene.add(hemi);
-    const dir=new THREE.DirectionalLight(0xffffff,0.7); dir.position.set(0.3,0.6,1.2); scene.add(dir);
-    function resize(){ const w=glCanvas.clientWidth=innerWidth, h=glCanvas.clientHeight=innerHeight; renderer.setSize(w,h,false); renderer.setPixelRatio(Math.min(devicePixelRatio||1,2)); cam.left=-w/2; cam.right=w/2; cam.top=h/2; cam.bottom=-h/2; cam.near=-3000; cam.far=3000; cam.updateProjectionMatrix(); setupDrawCanvas(); }
-    window.addEventListener('resize', resize);
-    glCanvas.addEventListener('webglcontextlost', (e)=>{ e.preventDefault(); log('WebGL context lost — перезапусти вкладку'); });
-
-    // ---------- Ghost materials ----------
-    function makeGhostMaterial(color){ return new THREE.ShaderMaterial({ transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide, uniforms:{ uColor:{value:new THREE.Color(color)}, uAlpha:{value:0.0} }, vertexShader:`varying vec3 vN; varying vec3 vW; void main(){ vN = normalize(normalMatrix*normal); vec4 wPos = modelMatrix*vec4(position,1.0); vW = wPos.xyz; gl_Position = projectionMatrix*viewMatrix*wPos; }`, fragmentShader:`varying vec3 vN; varying vec3 vW; uniform vec3 uColor; uniform float uAlpha; void main(){ vec3 V = normalize(cameraPosition - vW); float fres = pow(1.0 - max(dot(normalize(vN), V), 0.0), 2.0); float glow = smoothstep(0.0,1.0,fres); vec3 col = uColor*(0.35 + 0.9*glow); float a = clamp(0.18 + 0.75*glow, 0.0, 1.0)*uAlpha; if(a<0.02) discard; gl_FragColor = vec4(col, a); }` }); }
-    function makeJointMaterial(){ return new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.35 }); }
-
-    const CONNECTIONS=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20]];
-    function makeHandGroup(color){ const g=new THREE.Group(); const ghost=makeGhostMaterial(color), joint=makeJointMaterial(); const cylinders=[], spheres=[]; for(let i=0;i<CONNECTIONS.length;i++){ const geom=new THREE.CapsuleGeometry(7,1,6,10); const m=new THREE.Mesh(geom, ghost); g.add(m); cylinders.push(m);} for(let i=0;i<21;i++){ const s=new THREE.Mesh(new THREE.SphereGeometry(8,16,12), joint); g.add(s); spheres.push(s);} g.userData={cylinders,spheres,ghost,visibleAlpha:0}; scene.add(g); return g; }
-    const leftHand=makeHandGroup(0x8ad1ff), rightHand=makeHandGroup(0xff9aa2);
-
-    function fadeGroup(g,target){ const ud=g.userData; ud.visibleAlpha += (target-ud.visibleAlpha)*0.25; ud.ghost.uniforms.uAlpha.value=ud.visibleAlpha; g.visible = ud.visibleAlpha>0.02; }
-    function updateHand(group,lm){ const w=innerWidth,h=innerHeight,depth=650; const mirror=mirrorChk.checked; const {cylinders,spheres}=group.userData; const P=new Array(21); for(let j=0;j<21;j++){ const p=lm[j]; const sx=(mirror?(1-p.x):p.x)*w - w/2; const sy=(0.5-(p.y-0.5))*h; const sz=-p.z*depth; const v=new THREE.Vector3(sx,sy,sz); P[j]=v; spheres[j].position.copy(v);} for(let i=0;i<CONNECTIONS.length;i++){ const [a,b]=CONNECTIONS[i]; const A=P[a], B=P[b]; const m=cylinders[i]; const dir=new THREE.Vector3().subVectors(B,A); const len=Math.max(2,dir.length()); const mid=new THREE.Vector3().addVectors(A,B).multiplyScalar(0.5); const q=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dir.clone().normalize()); m.position.copy(mid); m.quaternion.copy(q); m.scale.set(1,len,1);} }
-
-    // ---------- Drawing ----------
-    const drawCanvas=$('#draw'), ctx=drawCanvas.getContext('2d');
-    let strokes=[], currentStroke=null, eraseMode=false; function setupDrawCanvas(){ const dpr=Math.min(devicePixelRatio||1,2); drawCanvas.width=Math.floor(innerWidth*dpr); drawCanvas.height=Math.floor(innerHeight*dpr); drawCanvas.style.width=innerWidth+'px'; drawCanvas.style.height=innerHeight+'px'; ctx.setTransform(dpr,0,0,dpr,0,0); redraw(); }
-    function redraw(){ ctx.clearRect(0,0,innerWidth,innerHeight); for(const s of strokes){ ctx.globalCompositeOperation=s.erase?'destination-out':'source-over'; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle=s.color; ctx.lineWidth=s.size; ctx.beginPath(); for(let i=1;i<s.pts.length;i++){ const a=s.pts[i-1], b=s.pts[i]; ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);} ctx.stroke(); } }
-    clearBtn.onclick=()=>{ strokes.length=0; redraw(); }; saveBtn.onclick=()=>{ const a=document.createElement('a'); a.download='drawing.png'; a.href=drawCanvas.toDataURL('image/png'); a.click(); }; undoBtn.onclick=()=>{ strokes.pop(); redraw(); }; eraserBtn.onclick=()=>{ eraseMode=!eraseMode; eraserBtn.classList.toggle('active', eraseMode); };
-
-    // ---------- Cursor & site control ----------
-    const cursorEl=$('#cursor'); function setCursor(x,y,show=true){ if(!show){ cursorEl.hidden=true; return; } cursorEl.hidden=false; cursorEl.style.left=x+'px'; cursorEl.style.top=y+'px'; }
-    function normToScreen(x,y){ const w=innerWidth,h=innerHeight; const mx=mirrorChk.checked?(1-x):x; return [mx*w, y*h]; }
-    const PID=13; let dragEl=null, dragging=false; const pe=(el,type,x,y)=>el.dispatchEvent(new PointerEvent(type,{pointerId:PID,pointerType:'touch',clientX:x,clientY:y,bubbles:true,cancelable:true}));
-    function startDrag(x,y){ const el=document.elementFromPoint(x,y)||document.body; dragEl=el; pe(el,'pointerover',x,y); pe(el,'pointerenter',x,y); pe(el,'pointerdown',x,y); dragging=true; }
-    function moveDrag(x,y){ if(dragEl) pe(dragEl,'pointermove',x,y); }
-    function endDrag(x,y){ if(!dragEl)return; pe(dragEl,'pointerup',x,y); dragging=false; dragEl=null; }
-    function rightClick(x,y){ const el=document.elementFromPoint(x,y)||document.body; el.dispatchEvent(new MouseEvent('contextmenu',{clientX:x,clientY:y,bubbles:true,cancelable:true})); }
-    function dblClick(x,y){ const el=document.elementFromPoint(x,y)||document.body; el.dispatchEvent(new MouseEvent('dblclick',{clientX:x,clientY:y,bubbles:true,cancelable:true})); }
-
-    // ---------- HandLandmarker safe init (no TDZ) ----------
-    let handLm=null; let visionReady = (async () => {
-      try {
-        setDot(modelSt,'warn');
-        const fileset = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm');
-        handLm = await HandLandmarker.createFromOptions(fileset, {
-          baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-          runningMode: 'VIDEO', numHands: 2, minHandDetectionConfidence: 0.6, minTrackingConfidence: 0.6
-        });
-        setDot(modelSt,'ok');
-      } catch (err) {
-        setDot(modelSt,'bad'); log('Model init error:', err?.message||err);
+      // ---- Camera ----
+      const video=$('#video'); let stream=null, running=false;
+      async function startCamera(){
+        try{
+          setDot(permSt,'warn');
+          stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30,max:60}},audio:false});
+          video.srcObject=stream; await video.play();
+          setDot(permSt,'ok');
+          await modelsReady; // wait models
+          running=true; startBtn.disabled=true; stopBtn.disabled=false; hint.style.display='none';
+          startLoop();
+        }catch(e){ console.error(e); setDot(permSt,'bad'); log('Camera error:', e?.message||e); alert('Нужен HTTPS и разрешение камеры.'); }
       }
+      function stopCamera(){ running=false; if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } video.srcObject=null; startBtn.disabled=false; stopBtn.disabled=true; }
+      startBtn.onclick=startCamera; stopBtn.onclick=stopCamera;
+
+      // ---- Three.js scene ----
+      const glCanvas = document.getElementById('gl');
+      const renderer = new THREE.WebGLRenderer({canvas:glCanvas, antialias:true, alpha:true, powerPreference:'high-performance'});
+      const scene=new THREE.Scene();
+      const cam=new THREE.OrthographicCamera();
+      const hemi=new THREE.HemisphereLight(0xffffff,0x181a26,1.0); scene.add(hemi);
+      const dir=new THREE.DirectionalLight(0xffffff,0.8); dir.position.set(0.3,0.6,1.2); scene.add(dir);
+      function resize(){ const w=glCanvas.clientWidth=innerWidth, h=glCanvas.clientHeight=innerHeight; renderer.setSize(w,h,false); renderer.setPixelRatio(Math.min(devicePixelRatio||1,2)); cam.left=-w/2; cam.right=w/2; cam.top=h/2; cam.bottom=-h/2; cam.near=-3000; cam.far=3000; cam.updateProjectionMatrix(); }
+      window.addEventListener('resize', resize);
+      function boot(){ resize(); renderer.setClearColor(0x000000,0); }
+      boot();
+
+      // ---- Ghost shaders ----
+      function ghostMat(color){ return new THREE.ShaderMaterial({ transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide, uniforms:{ uColor:{value:new THREE.Color(color)}, uAlpha:{value:0.0} }, vertexShader:`varying vec3 vN; varying vec3 vW; void main(){ vN = normalize(normalMatrix*normal); vec4 wPos = modelMatrix*vec4(position,1.0); vW=wPos.xyz; gl_Position = projectionMatrix*viewMatrix*wPos; }`, fragmentShader:`varying vec3 vN; varying vec3 vW; uniform vec3 uColor; uniform float uAlpha; void main(){ vec3 V = normalize(cameraPosition - vW); float fres = pow(1.0 - max(dot(normalize(vN), V), 0.0), 2.0); float glow = smoothstep(0.0,1.0,fres); vec3 col = uColor*(0.35 + 0.9*glow); float a = clamp(0.16 + 0.75*glow, 0.0, 1.0)*uAlpha; if(a<0.02) discard; gl_FragColor = vec4(col, a); }` }); }
+
+      // ---- Groups: face / pose / hands ----
+      // FACE: 468 points as Points + soft glow
+      const faceGroup = new THREE.Group(); scene.add(faceGroup);
+      const faceGeom = new THREE.BufferGeometry(); faceGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(468*3),3));
+      const facePts = new THREE.Points(faceGeom, new THREE.PointsMaterial({ color:0xffffff, size:6, sizeAttenuation:false, transparent:true, opacity:0.9 }));
+      faceGroup.add(facePts); faceGroup.userData={alpha:0};
+
+      // POSE: skeleton lines
+      const poseGroup = new THREE.Group(); scene.add(poseGroup); poseGroup.userData={alpha:0};
+      const POSE_PAIRS=[[11,13],[13,15],[12,14],[14,16],[11,12],[12,24],[11,23],[23,24],[23,25],[25,27],[24,26],[26,28]]; // basic
+      const poseGeom = new THREE.BufferGeometry(); poseGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(POSE_PAIRS.length*2*3),3));
+      const poseLines = new THREE.LineSegments(poseGeom, new THREE.LineBasicMaterial({ color:0xbbe1ff, transparent:true, opacity:0.8 }));
+      poseGroup.add(poseLines);
+
+      // HANDS: ghosty capsules + joints
+      const handsGroup = new THREE.Group(); scene.add(handsGroup); handsGroup.userData={alpha:0};
+      const HAND_CONN=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20]];
+      function makeHand(color){ const g=new THREE.Group(); const mat=ghostMat(color); const joint=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.35}); const cyl=[], sph=[]; for(let i=0;i<HAND_CONN.length;i++){ const m=new THREE.Mesh(new THREE.CapsuleGeometry(7,1,6,10), mat); g.add(m); cyl.push(m);} for(let i=0;i<21;i++){ const s=new THREE.Mesh(new THREE.SphereGeometry(8,16,12), joint); g.add(s); sph.push(s);} g.userData={cyl,sph,mat}; return g; }
+      const leftHand = makeHand(0x8ad1ff); const rightHand = makeHand(0xff9aa2); handsGroup.add(leftHand,rightHand);
+
+      function fade(g, target){ g.userData.alpha += (target - g.userData.alpha)*0.25; const a=g.userData.alpha; // apply
+        if(g===faceGroup){ facePts.material.opacity = 0.2 + 0.8*a; }
+        if(g===poseGroup){ poseLines.material.opacity = 0.2 + 0.8*a; }
+        if(g===handsGroup){ [leftHand,rightHand].forEach(h=>{ h.userData.mat.uniforms.uAlpha.value = a; }); }
+        g.visible = a>0.02;
+      }
+
+      // ---- Helpers ----
+      function normToScreen(x,y){ const w=innerWidth,h=innerHeight; const mx = mirrorChk.checked ? (1-x) : x; return [mx*w, y*h]; }
+      const lerp=(a,b,t)=>a+(b-a)*t; const sp=(p,n,a)=>!p?{...n}:{x:lerp(p.x,n.x,a),y:lerp(p.y,n.y,a),z:lerp(p.z,n.z,a)};
+
+      // ---- Models init ----
+      let faceLm=null, poseLm=null, handLm=null; setDot(modelSt,'warn');
+      const modelsReady = (async()=>{
+        try{
+          const fileset = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm');
+          faceLm = await FaceLandmarker.createFromOptions(fileset, {
+            baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task' },
+            runningMode: 'VIDEO', numFaces:1, outputFaceBlendshapes:false, outputFacialTransformationMatrixes:false
+          });
+          poseLm = await PoseLandmarker.createFromOptions(fileset, {
+            baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task' },
+            runningMode: 'VIDEO', numPoses:1
+          });
+          handLm = await HandLandmarker.createFromOptions(fileset, {
+            baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task' },
+            runningMode: 'VIDEO', numHands:2
+          });
+          setDot(modelSt,'ok');
+        }catch(err){ setDot(modelSt,'bad'); log('Model init error:', err?.message||err); }
+      })();
+
+      // ---- Tracking state ----
+      let lastVideoTime=-1; let lastT=performance.now(), acc=0, frames=0;
+      const S={ face:null, pose:null, hands:[null,null] };
+
+      function updateFace(lm){ // 468 points
+        const w=innerWidth,h=innerHeight, depth=800, mirror=mirrorChk.checked;
+        const arr=faceGeom.attributes.position.array; if(!lm){ fade(faceGroup,0); return; }
+        const a = 1 - Math.max(0.05, 1-Number(smoothRange.value));
+        if(!S.face){ S.face = lm.map(p=>({x:p.x,y:p.y,z:p.z})); }
+        for(let i=0;i<468;i++){ S.face[i]=sp(S.face[i], lm[i], a); const p=S.face[i]; const sx=(mirror?(1-p.x):p.x)*w - w/2; const sy=(0.5-(p.y-0.5))*h; const sz=-p.z*depth; arr[i*3+0]=sx; arr[i*3+1]=sy; arr[i*3+2]=sz; }
+        faceGeom.attributes.position.needsUpdate=true; fade(faceGroup, faceChk.checked?1:0);
+      }
+
+      function updatePose(lm){ // 33 points with selected pairs
+        const w=innerWidth,h=innerHeight, depth=700, mirror=mirrorChk.checked;
+        if(!lm){ fade(poseGroup,0); return; }
+        const a = 1 - Math.max(0.05, 1-Number(smoothRange.value));
+        if(!S.pose){ S.pose = lm.map(p=>({x:p.x,y:p.y,z:p.z})); }
+        for(let i=0;i<33;i++){ S.pose[i]=sp(S.pose[i], lm[i], a); }
+        const arr=poseGeom.attributes.position.array; let k=0;
+        for(const [A,B] of POSE_PAIRS){ const pA=S.pose[A], pB=S.pose[B]; const Ax=(mirror?(1-pA.x):pA.x)*w - w/2; const Ay=(0.5-(pA.y-0.5))*h; const Az=-pA.z*depth; const Bx=(mirror?(1-pB.x):pB.x)*w - w/2; const By=(0.5-(pB.y-0.5))*h; const Bz=-pB.z*depth; arr[k++]=Ax; arr[k++]=Ay; arr[k++]=Az; arr[k++]=Bx; arr[k++]=By; arr[k++]=Bz; }
+        poseGeom.attributes.position.needsUpdate=true; fade(poseGroup, poseChk.checked?1:0);
+      }
+
+      function updateHands(lms){ // up to 2 hands
+        const w=innerWidth,h=innerHeight, depth=650, mirror=mirrorChk.checked;
+        if(!lms || !lms.length){ fade(handsGroup,0); return; }
+        const a = 1 - Math.max(0.05, 1-Number(smoothRange.value));
+        for(let i=0;i<2;i++){
+          const lm=lms[i]; if(!lm){ continue; }
+          if(!S.hands[i]) S.hands[i]=lm.map(p=>({x:p.x,y:p.y,z:p.z}));
+          for(let j=0;j<21;j++){ S.hands[i][j]=sp(S.hands[i][j], lm[j], a); const p=S.hands[i][j]; const sx=(mirror?(1-p.x):p.x)*w - w/2; const sy=(0.5-(p.y-0.5))*h; const sz=-p.z*depth; const hgrp = (i===0? leftHand : rightHand); hgrp.userData.sph[j].position.set(sx,sy,sz); }
+          for(let e=0;e<HAND_CONN.length;e++){ const [A,B]=HAND_CONN[e]; const Apos= (i===0? leftHand : rightHand).userData.sph[A].position; const Bpos= (i===0? leftHand : rightHand).userData.sph[B].position; const m=(i===0? leftHand : rightHand).userData.cyl[e]; const dir=new THREE.Vector3().subVectors(Bpos,Apos); const len=Math.max(2,dir.length()); const mid=new THREE.Vector3().addVectors(Apos,Bpos).multiplyScalar(0.5); const q=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dir.clone().normalize()); m.position.copy(mid); m.quaternion.copy(q); m.scale.set(1,len,1); }
+        }
+        fade(handsGroup, handsChk.checked?1:0);
+      }
+
+      // ---- Main loop ----
+      function onFrame(){ if(!running) return; const nowT=performance.now(); try{
+          if(video.readyState>=2){ if(video.currentTime!==lastVideoTime){ lastVideoTime=video.currentTime; 
+            const FD = faceLm ? faceLm.detectForVideo(video, nowT) : null;
+            const PD = poseLm ? poseLm.detectForVideo(video, nowT) : null;
+            const HD = handLm ? handLm.detectForVideo(video, nowT) : null;
+            updateFace(FD?.faceLandmarks?.[0]);
+            updatePose(PD?.landmarks?.[0]);
+            updateHands(HD?.landmarks);
+          } }
+        }catch(err){ console.error(err); log('ERR:', err?.message||err); }
+        // fps
+        const dt=performance.now()-lastT; lastT=performance.now(); acc+=dt; frames++; if(acc>=500){ const fps=Math.round(1000*frames/acc); fpsTxt.textContent=`FPS — ${fps}`; setDot(fpsSt, fps>=24?'ok':(fps>=14?'warn':'bad')); acc=0; frames=0; }
+        if('requestVideoFrameCallback' in HTMLVideoElement.prototype){ video.requestVideoFrameCallback(()=>onFrame()); } else { requestAnimationFrame(onFrame); }
+      }
+      function startLoop(){ if('requestVideoFrameCallback' in HTMLVideoElement.prototype){ video.requestVideoFrameCallback(()=>onFrame()); } else { requestAnimationFrame(onFrame); } }
+
+      // quick WebGL self-test to exclude black
+      { const test = new THREE.Mesh(new THREE.PlaneGeometry(40,40), new THREE.MeshBasicMaterial({color:0x223344,transparent:true,opacity:0.15})); test.position.set(-innerWidth/2+40, innerHeight/2-40, 0); scene.add(test); setTimeout(()=>scene.remove(test), 1000); }
+
     })();
-
-    // ---------- Tracking state ----------
-    const H=[ // 0-left, 1-right
-      {vis:false, miss:0, sm:null, pinch:false, t0:0, mid:false, ring:false, lastTap:0, lastY:null},
-      {vis:false, miss:0, sm:null, pinch:false, t0:0, mid:false, ring:false, lastTap:0, lastY:null}
-    ];
-    const PIN_ON=()=>Number(pinchRange.value), PIN_OFF=()=>Number(pinchRange.value)+0.012; const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y,(a.z||0)-(b.z||0));
-    const lerp=(a,b,t)=>a+(b-a)*t; const sp=(p,n,a)=>!p?{...n}:{x:lerp(p.x,n.x,a),y:lerp(p.y,n.y,a),z:lerp(p.z,n.z,a)};
-
-    // Two-hand page zoom
-    let prevZoom=null, pageScale=1; const PAGE_MIN=0.75, PAGE_MAX=1.75; const setScale=s=>{ pageScale=Math.max(PAGE_MIN,Math.min(PAGE_MAX,s)); document.documentElement.style.transform=`scale(${pageScale})`; document.documentElement.style.transformOrigin='50% 50%'; };
-
-    // Draw helpers
-    function addPt(x,y){ if(!currentStroke){ currentStroke={ color: (eraseMode?'#000000': colorPick.value), size:Number(sizeRange.value), erase:eraseMode, pts:[] }; strokes.push(currentStroke);} const last=currentStroke.pts.at(-1); if(!last || Math.hypot(x-last.x,y-last.y)>0.5) currentStroke.pts.push({x,y}); }
-    function endStroke(){ currentStroke=null; }
-
-    // Main loop (requestVideoFrameCallback for Safari/Chrome)
-    let lastVideoTime=-1; let lastT=performance.now(), acc=0, frames=0;
-    function onFrame(){ if(!running) return; const nowT=performance.now(); try{
-        if(video.readyState>=2 && handLm){
-          if(video.currentTime!==lastVideoTime){ lastVideoTime=video.currentTime; const res = handLm.detectForVideo(video, nowT); handleResults(res); }
-        }
-      }catch(err){ console.error(err); log('ERR:', err?.message||err); }
-      // fps
-      const dt=performance.now()-lastT; lastT=performance.now(); acc+=dt; frames++; if(acc>=500){ const fps=Math.round(1000*frames/acc); fpsTxt.textContent=`FPS — ${fps}`; setDot(fpsSt, fps>=24?'ok':(fps>=14?'warn':'bad')); acc=0; frames=0; }
-      if('requestVideoFrameCallback' in HTMLVideoElement.prototype){ video.requestVideoFrameCallback(()=>onFrame()); } else { requestAnimationFrame(onFrame); }
-    }
-    function startLoop(){ if('requestVideoFrameCallback' in HTMLVideoElement.prototype){ video.requestVideoFrameCallback(()=>onFrame()); } else { requestAnimationFrame(onFrame); } }
-
-    function roleMap(res){ const out=[null,null]; const hs=res.handednesses||[]; const lms=res.landmarks||[]; for(let i=0;i<lms.length;i++){ const label = hs[i]?.[0]?.categoryName || ((lms[i][0].x<0.5)?'Left':'Right'); out[label==='Left'?0:1]=lms[i]; } return out; }
-
-    function handleResults(res){ const roles=roleMap(res); const groups=[leftHand,rightHand];
-      for(let i=0;i<2;i++){
-        const lm=roles[i]; const S=H[i]; const G=groups[i];
-        if(lm){
-          S.miss=0; S.vis=true; const a=1 - Math.max(0.05, 1-Number(smoothRange.value)); if(!S.sm) S.sm = lm.map(p=>({x:p.x,y:p.y,z:p.z})); for(let j=0;j<21;j++) S.sm[j]=sp(S.sm[j], lm[j], a);
-          updateHand(G,S.sm); fadeGroup(G,1);
-          // gestures
-          const tip=S.sm[8], thumb=S.sm[4], mid=S.sm[12], ring=S.sm[16]; const [cx,cy]=normToScreen(tip.x,tip.y);
-          const d=dist(tip,thumb), dM=dist(mid,thumb), dR=dist(ring,thumb);
-          const pin=S.pinch; if(!pin && d<PIN_ON()){ S.pinch=true; S.t0=performance.now(); } if(pin && d>PIN_OFF()){ S.pinch=false; }
-          S.mid = dM<PIN_ON(); S.ring = dR<PIN_ON();
-          if(i===1){ // right hand
-            setCursor(cx,cy,true);
-            if(mode==='draw'){
-              eraseMode = S.mid || eraserBtn.classList.contains('active');
-              if(S.pinch){ addPt(cx,cy); redraw(); } else if(currentStroke){ endStroke(); }
-            } else {
-              if(!pin && S.pinch){ const now=performance.now(); if(now-S.lastTap<280) dblClick(cx,cy); S.lastTap=now; }
-              if(S.ring && !dragging){ rightClick(cx,cy); }
-              if(S.pinch){ if(!dragging && performance.now()-S.t0>180) startDrag(cx,cy); if(dragging) moveDrag(cx,cy); }
-              else { if(dragging){ endDrag(cx,cy); } else { const t=performance.now()-S.t0; if(t>30 && t<180){ (document.elementFromPoint(cx,cy)||document.body).click?.(); } } }
-            }
-          } else { // left = scroll
-            if(S.pinch){ if(S.lastY==null) S.lastY=cy; const dy=cy - S.lastY; window.scrollBy({top:dy*0.9,behavior:'auto'}); S.lastY=cy; } else { S.lastY=null; }
-          }
-        } else {
-          S.miss++; if(S.miss>8) S.vis=false; fadeGroup(G, S.vis?0.6:0); if(i===1) setCursor(0,0,false); if(i===1 && currentStroke) endStroke(); if(i===1 && dragging) endDrag(innerWidth/2, innerHeight/2);
-        }
-      }
-      // two-hand zoom
-      if(H[0].vis && H[1].vis && H[0].pinch && H[1].pinch){ const L=H[0].sm[0], R=H[1].sm[0]; const pL=normToScreen(L.x,L.y), pR=normToScreen(R.x,R.y); const dNow=Math.hypot(pL[0]-pR[0], pL[1]-pR[1]); if(prevZoom==null) prevZoom=dNow; else { const ratio=dNow/prevZoom; if(Math.abs(ratio-1)>0.01){ setScale(pageScale*ratio); prevZoom=dNow; } } } else { prevZoom=null; }
-      renderer.render(scene,cam);
-    }
-
-    function boot(){ resize(); renderer.setClearColor(0x000000,0); }
-    boot();
-
-    // quick WebGL self-test to ensure not black screen
-    { const test = new THREE.Mesh(new THREE.PlaneGeometry(40,40), new THREE.MeshBasicMaterial({color:0x223344,transparent:true,opacity:0.15})); test.position.set(-innerWidth/2+40, innerHeight/2-40, 0); scene.add(test); setTimeout(()=>scene.remove(test), 1200); }
-  })();
-</script>
+  </script>
 </body>
 </html>
