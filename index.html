@@ -78,7 +78,9 @@
 
   <!-- Весь JS ниже — как модуль. Используем новое API MediaPipe Tasks Vision (HandLandmarker) -->
   <script type="module">
-    import { HandLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.mjs';
+  (async () => {
+    // Import MediaPipe Tasks (as module)
+    const { HandLandmarker, FilesetResolver } = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.mjs');
 
     // ---------- UI refs ----------
     const $ = s=>document.querySelector(s);
@@ -97,9 +99,11 @@
       try{
         setDot(permSt,'warn');
         stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30,max:60}},audio:false});
-        video.srcObject=stream; await video.play(); setDot(permSt,'ok'); running=true; startBtn.disabled=true; stopBtn.disabled=false; hint.style.display='none';
+        video.srcObject=stream; await video.play(); setDot(permSt,'ok');
+        await visionReady; // ⬅️ дождаться модели, иначе TDZ/неинициализированная переменная
+        running=true; startBtn.disabled=true; stopBtn.disabled=false; hint.style.display='none';
         startLoop();
-      }catch(e){ console.error(e); setDot(permSt,'bad'); alert('Нужен HTTPS и разрешение камеры.'); }
+      }catch(e){ console.error(e); setDot(permSt,'bad'); log('Camera error:', e?.message||e); alert('Нужен HTTPS и разрешение камеры.'); }
     }
     function stopCamera(){ running=false; if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } video.srcObject=null; startBtn.disabled=false; stopBtn.disabled=true; }
     startBtn.onclick=startCamera; stopBtn.onclick=stopCamera;
@@ -133,7 +137,7 @@
     clearBtn.onclick=()=>{ strokes.length=0; redraw(); }; saveBtn.onclick=()=>{ const a=document.createElement('a'); a.download='drawing.png'; a.href=drawCanvas.toDataURL('image/png'); a.click(); }; undoBtn.onclick=()=>{ strokes.pop(); redraw(); }; eraserBtn.onclick=()=>{ eraseMode=!eraseMode; eraserBtn.classList.toggle('active', eraseMode); };
 
     // ---------- Cursor & site control ----------
-    const cursorEl=$('#cursor'); function setCursor(x,y,show=true){ if(!show){cursorEl.hidden=true;return;} cursorEl.hidden=false; cursorEl.style.left=x+'px'; cursorEl.style.top=y+'px'; }
+    const cursorEl=$('#cursor'); function setCursor(x,y,show=true){ if(!show){ cursorEl.hidden=true; return; } cursorEl.hidden=false; cursorEl.style.left=x+'px'; cursorEl.style.top=y+'px'; }
     function normToScreen(x,y){ const w=innerWidth,h=innerHeight; const mx=mirrorChk.checked?(1-x):x; return [mx*w, y*h]; }
     const PID=13; let dragEl=null, dragging=false; const pe=(el,type,x,y)=>el.dispatchEvent(new PointerEvent(type,{pointerId:PID,pointerType:'touch',clientX:x,clientY:y,bubbles:true,cancelable:true}));
     function startDrag(x,y){ const el=document.elementFromPoint(x,y)||document.body; dragEl=el; pe(el,'pointerover',x,y); pe(el,'pointerenter',x,y); pe(el,'pointerdown',x,y); dragging=true; }
@@ -142,14 +146,20 @@
     function rightClick(x,y){ const el=document.elementFromPoint(x,y)||document.body; el.dispatchEvent(new MouseEvent('contextmenu',{clientX:x,clientY:y,bubbles:true,cancelable:true})); }
     function dblClick(x,y){ const el=document.elementFromPoint(x,y)||document.body; el.dispatchEvent(new MouseEvent('dblclick',{clientX:x,clientY:y,bubbles:true,cancelable:true})); }
 
-    // ---------- HandLandmarker (новое API, стабильнее) ----------
-    setDot(modelSt,'warn');
-    const fileset = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm');
-    const handLm = await HandLandmarker.createFromOptions(fileset, {
-      baseOptions: { modelAssetPath: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm/hand_landmarker.task' },
-      runningMode: 'VIDEO', numHands: 2, minHandDetectionConfidence: 0.6, minTrackingConfidence: 0.6
-    });
-    setDot(modelSt,'ok');
+    // ---------- HandLandmarker safe init (no TDZ) ----------
+    let handLm=null; let visionReady = (async () => {
+      try {
+        setDot(modelSt,'warn');
+        const fileset = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm');
+        handLm = await HandLandmarker.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm/hand_landmarker.task' },
+          runningMode: 'VIDEO', numHands: 2, minHandDetectionConfidence: 0.6, minTrackingConfidence: 0.6
+        });
+        setDot(modelSt,'ok');
+      } catch (err) {
+        setDot(modelSt,'bad'); log('Model init error:', err?.message||err);
+      }
+    })();
 
     // ---------- Tracking state ----------
     const H=[ // 0-left, 1-right
@@ -166,10 +176,11 @@
     function addPt(x,y){ if(!currentStroke){ currentStroke={ color: (eraseMode?'#000000': colorPick.value), size:Number(sizeRange.value), erase:eraseMode, pts:[] }; strokes.push(currentStroke);} const last=currentStroke.pts.at(-1); if(!last || Math.hypot(x-last.x,y-last.y)>0.5) currentStroke.pts.push({x,y}); }
     function endStroke(){ currentStroke=null; }
 
-    // Main loop (requestVideoFrameCallback для Safari/Chrome)
+    // Main loop (requestVideoFrameCallback for Safari/Chrome)
     let lastVideoTime=-1; let lastT=performance.now(), acc=0, frames=0;
     function onFrame(){ if(!running) return; const nowT=performance.now(); try{
-        if(video.readyState>=2){ if(video.currentTime!==lastVideoTime){ lastVideoTime=video.currentTime; const res = handLm.detectForVideo(video, nowT); handleResults(res); }
+        if(video.readyState>=2 && handLm){
+          if(video.currentTime!==lastVideoTime){ lastVideoTime=video.currentTime; const res = handLm.detectForVideo(video, nowT); handleResults(res); }
         }
       }catch(err){ console.error(err); log('ERR:', err?.message||err); }
       // fps
@@ -217,8 +228,9 @@
     function boot(){ resize(); renderer.setClearColor(0x000000,0); }
     boot();
 
-    // быстрый самотест сцены, чтобы исключить «чёрный экран» от WebGL
+    // quick WebGL self-test to ensure not black screen
     { const test = new THREE.Mesh(new THREE.PlaneGeometry(40,40), new THREE.MeshBasicMaterial({color:0x223344,transparent:true,opacity:0.15})); test.position.set(-innerWidth/2+40, innerHeight/2-40, 0); scene.add(test); setTimeout(()=>scene.remove(test), 1200); }
-  </script>
+  })();
+</script>
 </body>
 </html>
