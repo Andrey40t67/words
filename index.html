@@ -3,32 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Hand Tracking & Control</title>
+    <title>Hand Tracking Control</title>
     <style>
-        body {
+        * {
             margin: 0;
             padding: 0;
-            background: linear-gradient(45deg, #1a1a2e, #16213e);
-            font-family: 'Arial', sans-serif;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
             overflow: hidden;
-            color: white;
-        }
-
-        #container {
             position: relative;
-            width: 100vw;
-            height: 100vh;
         }
 
-        #videoElement {
+        #videoContainer {
             position: absolute;
-            top: -9999px; /* Скрыто от пользователя */
-            left: -9999px;
-            width: 640px;
-            height: 480px;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
         }
 
-        #canvasElement {
+        #video {
+            display: none;
+        }
+
+        #canvas3d {
             position: absolute;
             top: 0;
             left: 0;
@@ -45,178 +49,275 @@
             width: 100%;
             height: 100%;
             z-index: 5;
+            pointer-events: none;
         }
 
-        #threeCanvas {
+        .start-screen {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 1;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 100;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
         }
 
-        .control-panel {
+        .start-screen h1 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 2.5em;
+        }
+
+        .start-screen p {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+
+        #startBtn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.2em;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        #startBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .controls {
             position: absolute;
             top: 20px;
             left: 20px;
-            z-index: 20;
-            background: rgba(0,0,0,0.7);
+            z-index: 50;
+            background: rgba(255, 255, 255, 0.9);
             padding: 20px;
-            border-radius: 10px;
-            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            display: none;
         }
 
-        .status {
-            font-size: 14px;
-            margin-bottom: 10px;
-            color: #00ff88;
+        .controls h3 {
+            margin-bottom: 15px;
+            color: #333;
         }
 
-        .color-palette {
+        .btn-group {
             display: flex;
             gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .control-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .control-btn:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        .control-btn.active {
+            background: #667eea;
+            color: white;
+        }
+
+        .color-picker {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
             margin-top: 10px;
         }
 
-        .color-btn {
+        .color-option {
             width: 30px;
             height: 30px;
-            border: none;
             border-radius: 50%;
             cursor: pointer;
-            transition: transform 0.2s;
+            border: 3px solid transparent;
+            transition: all 0.3s;
         }
 
-        .color-btn:hover {
+        .color-option:hover {
             transform: scale(1.2);
         }
 
-        .gesture-info {
+        .color-option.selected {
+            border-color: #333;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .info-panel {
             position: absolute;
-            bottom: 20px;
+            top: 20px;
             right: 20px;
-            z-index: 20;
-            background: rgba(0,0,0,0.7);
+            background: rgba(255, 255, 255, 0.9);
             padding: 15px;
             border-radius: 10px;
-            backdrop-filter: blur(10px);
-            font-size: 12px;
+            z-index: 50;
+            display: none;
+            min-width: 200px;
+        }
+
+        .info-panel h4 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .gesture-info {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.5;
+        }
+
+        .virtual-button {
+            position: absolute;
+            background: rgba(102, 126, 234, 0.8);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 18px;
+            z-index: 20;
+            transition: all 0.3s;
+        }
+
+        .virtual-button.hover {
+            background: rgba(118, 75, 162, 0.9);
+            transform: scale(1.1);
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 24px;
+            z-index: 100;
+            display: none;
+        }
+
+        .particles {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
         }
     </style>
 </head>
 <body>
-    <div id="container">
-        <video id="videoElement" autoplay muted playsinline></video>
-        <canvas id="canvasElement"></canvas>
-        <canvas id="drawingCanvas"></canvas>
-        <div id="threeCanvas"></div>
-        
-        <div class="control-panel">
-            <div class="status" id="status">Инициализация...</div>
-            <div>Точность трекинга: <span id="confidence">0%</span></div>
-            <div class="color-palette">
-                <button class="color-btn" style="background: #ff0000" onclick="setDrawColor('#ff0000')"></button>
-                <button class="color-btn" style="background: #00ff00" onclick="setDrawColor('#00ff00')"></button>
-                <button class="color-btn" style="background: #0000ff" onclick="setDrawColor('#0000ff')"></button>
-                <button class="color-btn" style="background: #ffff00" onclick="setDrawColor('#ffff00')"></button>
-                <button class="color-btn" style="background: #ff00ff" onclick="setDrawColor('#ff00ff')"></button>
-                <button class="color-btn" style="background: #ffffff" onclick="clearCanvas()">✕</button>
-            </div>
-        </div>
+    <video id="video" autoplay></video>
+    <canvas id="drawingCanvas"></canvas>
+    <canvas id="canvas3d"></canvas>
+    <div class="particles" id="particles"></div>
 
-        <div class="gesture-info">
-            <div><strong>Управление:</strong></div>
-            <div>✊ Сжатый кулак - Рисование</div>
-            <div>✋ Открытая ладонь - Навигация</div>
-            <div>👌 Щепотка - Выбор цвета</div>
-            <div>☝️ Указательный - Курсор</div>
+    <div class="start-screen" id="startScreen">
+        <h1>🤚 Hand Tracking Control</h1>
+        <p>Управляйте сайтом с помощью жестов рук!</p>
+        <p style="font-size: 0.9em; color: #999;">Нажмите кнопку и разрешите доступ к камере</p>
+        <button id="startBtn">Начать</button>
+    </div>
+
+    <div class="loading" id="loading">Загрузка модели...</div>
+
+    <div class="controls" id="controls">
+        <h3>Режимы</h3>
+        <div class="btn-group">
+            <button class="control-btn active" id="drawMode">✏️ Рисование</button>
+            <button class="control-btn" id="gestureMode">👋 Жесты</button>
+            <button class="control-btn" id="clearBtn">🗑️ Очистить</button>
+        </div>
+        <div id="colorPicker" class="color-picker">
+            <div class="color-option selected" style="background: #FF6B6B" data-color="#FF6B6B"></div>
+            <div class="color-option" style="background: #4ECDC4" data-color="#4ECDC4"></div>
+            <div class="color-option" style="background: #45B7D1" data-color="#45B7D1"></div>
+            <div class="color-option" style="background: #96CEB4" data-color="#96CEB4"></div>
+            <div class="color-option" style="background: #FFEAA7" data-color="#FFEAA7"></div>
+            <div class="color-option" style="background: #DDA0DD" data-color="#DDA0DD"></div>
+            <div class="color-option" style="background: #98D8C8" data-color="#98D8C8"></div>
+            <div class="color-option" style="background: #FFFFFF" data-color="#FFFFFF"></div>
         </div>
     </div>
 
-    <!-- CDN библиотеки -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <div class="info-panel" id="infoPanel">
+        <h4>Жесты:</h4>
+        <div class="gesture-info">
+            ✌️ Peace - Рисование<br>
+            ✊ Кулак - Пауза<br>
+            🖐️ Ладонь - Стереть<br>
+            👍 Палец вверх - Меню
+        </div>
+    </div>
+
+    <div class="virtual-button" id="virtualBtn1" style="top: 200px; left: 50%; transform: translateX(-50%);">
+        Наведите руку
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
     <script>
-        // Глобальные переменные
+        let video, canvas3d, ctx3d, drawingCanvas, drawCtx;
         let hands, camera;
-        let scene, renderer, handMeshes = [];
+        let currentMode = 'draw';
         let isDrawing = false;
-        let currentColor = '#ff0000';
-        let lastDrawPoint = null;
-        let handStates = { left: null, right: null };
+        let lastX = 0, lastY = 0;
+        let currentColor = '#FF6B6B';
+        let prevHandData = null;
+        let particles = [];
 
-        // Элементы DOM
-        const videoElement = document.getElementById('videoElement');
-        const canvasElement = document.getElementById('canvasElement');
-        const canvasCtx = canvasElement.getContext('2d');
-        const drawingCanvas = document.getElementById('drawingCanvas');
-        const drawingCtx = drawingCanvas.getContext('2d');
-        const statusElement = document.getElementById('status');
-        const confidenceElement = document.getElementById('confidence');
+        const startBtn = document.getElementById('startBtn');
+        const startScreen = document.getElementById('startScreen');
+        const controls = document.getElementById('controls');
+        const infoPanel = document.getElementById('infoPanel');
+        const loading = document.getElementById('loading');
+        const virtualBtn1 = document.getElementById('virtualBtn1');
 
-        // Three.js инициализация
-        function initThreeJS() {
-            scene = new THREE.Scene();
-            renderer = new THREE.WebGLRenderer({ 
-                canvas: document.getElementById('threeCanvas'),
-                alpha: true 
-            });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setClearColor(0x000000, 0);
+        startBtn.addEventListener('click', async () => {
+            startScreen.style.display = 'none';
+            loading.style.display = 'block';
+            await initializeHandTracking();
+        });
 
-            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.z = 2;
+        async function initializeHandTracking() {
+            video = document.getElementById('video');
+            canvas3d = document.getElementById('canvas3d');
+            ctx3d = canvas3d.getContext('2d');
+            drawingCanvas = document.getElementById('drawingCanvas');
+            drawCtx = drawingCanvas.getContext('2d');
 
-            // Освещение
-            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
-            scene.add(ambientLight);
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            directionalLight.position.set(1, 1, 1);
-            scene.add(directionalLight);
-
-            animate();
-        }
-
-        // Создание 3D модели руки
-        function createHandMesh(handedness) {
-            const geometry = new THREE.SphereGeometry(0.02, 8, 6);
-            const material = new THREE.MeshPhongMaterial({ 
-                color: handedness === 'Right' ? 0x00ff88 : 0xff8800,
-                transparent: true,
-                opacity: 0.7
-            });
-            
-            const handGroup = new THREE.Group();
-            
-            // Создаем 21 точку для ландмарков руки
-            for (let i = 0; i < 21; i++) {
-                const sphere = new THREE.Mesh(geometry, material);
-                handGroup.add(sphere);
+            // Установка размеров canvas
+            function resizeCanvases() {
+                canvas3d.width = window.innerWidth;
+                canvas3d.height = window.innerHeight;
+                drawingCanvas.width = window.innerWidth;
+                drawingCanvas.height = window.innerHeight;
             }
+            resizeCanvases();
+            window.addEventListener('resize', resizeCanvases);
 
-            // Линии между точками
-            const lineGeometry = new THREE.BufferGeometry();
-            const lineMaterial = new THREE.LineBasicMaterial({ 
-                color: handedness === 'Right' ? 0x00ff88 : 0xff8800,
-                transparent: true,
-                opacity: 0.5
-            });
-            const lines = new THREE.Line(lineGeometry, lineMaterial);
-            handGroup.add(lines);
-
-            scene.add(handGroup);
-            return handGroup;
-        }
-
-        // MediaPipe инициализация
-        function initMediaPipe() {
+            // Инициализация MediaPipe Hands
             hands = new Hands({
-                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+                locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                }
             });
 
             hands.setOptions({
@@ -226,270 +327,249 @@
                 minTrackingConfidence: 0.5
             });
 
-            hands.onResults(onResults);
+            hands.onResults(onHandResults);
 
-            camera = new Camera(videoElement, {
+            // Запуск камеры
+            camera = new Camera(video, {
                 onFrame: async () => {
-                    await hands.send({ image: videoElement });
+                    await hands.send({image: video});
                 },
-                width: 640,
-                height: 480
+                width: 1280,
+                height: 720
             });
 
-            camera.start();
-        }
-
-        // Обработка результатов MediaPipe[1][30]
-        function onResults(results) {
-            // Очистка canvas
-            canvasCtx.save();
-            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            
-            if (results.multiHandLandmarks) {
-                statusElement.textContent = `Обнаружено рук: ${results.multiHandLandmarks.length}`;
-                
-                for (let i = 0; i < results.multiHandLandmarks.length; i++) {
-                    const landmarks = results.multiHandLandmarks[i];
-                    const handedness = results.multiHandedness[i].label;
-                    
-                    // Обновляем 3D модель руки
-                    updateHandMesh(landmarks, handedness, i);
-                    
-                    // Обрабатываем жесты
-                    const gesture = detectGesture(landmarks);
-                    processGesture(gesture, landmarks, handedness);
-                    
-                    // Вычисляем конфиденциальность
-                    const confidence = Math.round(results.multiHandedness[i].score * 100);
-                    confidenceElement.textContent = `${confidence}%`;
-                }
-            } else {
-                statusElement.textContent = 'Руки не обнаружены';
-                confidenceElement.textContent = '0%';
-                
-                // Удаляем 3D модели если руки не видны
-                handMeshes.forEach(mesh => scene.remove(mesh));
-                handMeshes = [];
-            }
-
-            canvasCtx.restore();
-        }
-
-        // Обновление 3D модели руки
-        function updateHandMesh(landmarks, handedness, index) {
-            while (handMeshes.length <= index) {
-                handMeshes.push(createHandMesh(handedness));
-            }
-
-            const handMesh = handMeshes[index];
-            const spheres = handMesh.children.filter(child => child.geometry.type === 'SphereGeometry');
-
-            landmarks.forEach((landmark, i) => {
-                if (spheres[i]) {
-                    // Конвертируем координаты из MediaPipe в Three.js
-                    const x = (landmark.x - 0.5) * 4;
-                    const y = -(landmark.y - 0.5) * 3;
-                    const z = -landmark.z * 2;
-                    
-                    spheres[i].position.set(x, y, z);
-                }
+            camera.start().then(() => {
+                loading.style.display = 'none';
+                controls.style.display = 'block';
+                infoPanel.style.display = 'block';
             });
-
-            // Обновляем линии между точками[25]
-            updateHandConnections(handMesh, landmarks);
         }
 
-        // Обновление соединений между точками руки
-        function updateHandConnections(handMesh, landmarks) {
+        function onHandResults(results) {
+            // Очистка 3D canvas
+            ctx3d.clearRect(0, 0, canvas3d.width, canvas3d.height);
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                for (const landmarks of results.multiHandLandmarks) {
+                    drawHand3D(landmarks);
+                    processGestures(landmarks);
+                    
+                    if (currentMode === 'draw') {
+                        handleDrawing(landmarks);
+                    }
+                    
+                    checkVirtualButtonHover(landmarks);
+                }
+            }
+
+            prevHandData = results.multiHandLandmarks;
+        }
+
+        function drawHand3D(landmarks) {
             const connections = [
-                [0, 1], [1, 2], [2, 3], [3, 4], // Большой палец
-                [0, 5], [5, 6], [6, 7], [7, 8], // Указательный
-                [5, 9], [9, 10], [10, 11], [11, 12], // Средний
-                [9, 13], [13, 14], [14, 15], [15, 16], // Безымянный
-                [13, 17], [17, 18], [18, 19], [19, 20], // Мизинец
-                [0, 17] // Соединение запястья
+                [0, 1], [1, 2], [2, 3], [3, 4],  // Большой палец
+                [0, 5], [5, 6], [6, 7], [7, 8],  // Указательный
+                [0, 9], [9, 10], [10, 11], [11, 12],  // Средний
+                [0, 13], [13, 14], [14, 15], [15, 16],  // Безымянный
+                [0, 17], [17, 18], [18, 19], [19, 20],  // Мизинец
+                [5, 9], [9, 13], [13, 17]  // Ладонь
             ];
 
-            const positions = [];
-            connections.forEach(([start, end]) => {
-                const startLandmark = landmarks[start];
-                const endLandmark = landmarks[end];
+            // Рисуем связи
+            ctx3d.strokeStyle = 'rgba(100, 200, 255, 0.6)';
+            ctx3d.lineWidth = 3;
+            
+            connections.forEach(connection => {
+                const start = landmarks[connection[0]];
+                const end = landmarks[connection[1]];
                 
-                positions.push(
-                    (startLandmark.x - 0.5) * 4, -(startLandmark.y - 0.5) * 3, -startLandmark.z * 2,
-                    (endLandmark.x - 0.5) * 4, -(endLandmark.y - 0.5) * 3, -endLandmark.z * 2
-                );
+                ctx3d.beginPath();
+                ctx3d.moveTo(start.x * canvas3d.width, start.y * canvas3d.height);
+                ctx3d.lineTo(end.x * canvas3d.width, end.y * canvas3d.height);
+                ctx3d.stroke();
             });
 
-            const linesMesh = handMesh.children.find(child => child.type === 'Line');
-            if (linesMesh) {
-                linesMesh.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            // Рисуем точки
+            landmarks.forEach((landmark, index) => {
+                const x = landmark.x * canvas3d.width;
+                const y = landmark.y * canvas3d.height;
+                
+                // Создаем градиент для точек
+                const gradient = ctx3d.createRadialGradient(x, y, 0, x, y, 10);
+                gradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+                gradient.addColorStop(0.5, 'rgba(100, 200, 255, 0.7)');
+                gradient.addColorStop(1, 'rgba(100, 200, 255, 0.3)');
+                
+                ctx3d.fillStyle = gradient;
+                ctx3d.beginPath();
+                ctx3d.arc(x, y, index === 8 ? 12 : 8, 0, 2 * Math.PI);
+                ctx3d.fill();
+                
+                // Эффект свечения
+                ctx3d.shadowBlur = 20;
+                ctx3d.shadowColor = 'rgba(100, 200, 255, 0.8)';
+                ctx3d.fill();
+                ctx3d.shadowBlur = 0;
+            });
+
+            // Добавляем частицы для эффекта
+            if (Math.random() > 0.7) {
+                createParticle(landmarks[8].x * canvas3d.width, landmarks[8].y * canvas3d.height);
             }
         }
 
-        // Определение жеста
-        function detectGesture(landmarks) {
-            const thumbTip = landmarks[4];
+        function handleDrawing(landmarks) {
             const indexTip = landmarks[8];
-            const middleTip = landmarks[12];
-            const ringTip = landmarks[16];
-            const pinkyTip = landmarks[20];
-            const wrist = landmarks[0];
+            const x = indexTip.x * drawingCanvas.width;
+            const y = indexTip.y * drawingCanvas.height;
 
-            // Расстояние между большим и указательным пальцем (щепотка)
-            const thumbIndexDist = Math.sqrt(
-                Math.pow(thumbTip.x - indexTip.x, 2) +
-                Math.pow(thumbTip.y - indexTip.y, 2)
+            const thumbTip = landmarks[4];
+            const distance = Math.sqrt(
+                Math.pow(indexTip.x - thumbTip.x, 2) + 
+                Math.pow(indexTip.y - thumbTip.y, 2)
             );
 
-            // Проверяем высоту пальцев относительно запястья
-            const fingersUp = [
-                thumbTip.y < wrist.y - 0.05,
-                indexTip.y < wrist.y - 0.05,
-                middleTip.y < wrist.y - 0.05,
-                ringTip.y < wrist.y - 0.05,
-                pinkyTip.y < wrist.y - 0.05
-            ];
+            // Рисуем когда большой и указательный пальцы сведены
+            if (distance < 0.05) {
+                if (!isDrawing) {
+                    isDrawing = true;
+                    lastX = x;
+                    lastY = y;
+                } else {
+                    drawCtx.strokeStyle = currentColor;
+                    drawCtx.lineWidth = 5;
+                    drawCtx.lineCap = 'round';
+                    drawCtx.beginPath();
+                    drawCtx.moveTo(lastX, lastY);
+                    drawCtx.lineTo(x, y);
+                    drawCtx.stroke();
+                    lastX = x;
+                    lastY = y;
+                }
+            } else {
+                isDrawing = false;
+            }
+        }
 
-            const fingersUpCount = fingersUp.filter(Boolean).length;
+        function processGestures(landmarks) {
+            // Определение жестов
+            const gesture = detectGesture(landmarks);
+            
+            if (gesture === 'peace') {
+                currentMode = 'draw';
+                document.getElementById('drawMode').classList.add('active');
+                document.getElementById('gestureMode').classList.remove('active');
+            } else if (gesture === 'fist') {
+                // Пауза
+            } else if (gesture === 'open_palm') {
+                // Можно добавить функцию стирания
+            }
+        }
 
-            if (thumbIndexDist < 0.05) return 'pinch';
-            if (fingersUpCount <= 1) return 'closed';
-            if (fingersUpCount === 1 && fingersUp[1]) return 'point';
-            if (fingersUpCount >= 4) return 'open';
+        function detectGesture(landmarks) {
+            // Простое определение жестов
+            const fingerTips = [4, 8, 12, 16, 20];
+            const fingerBases = [2, 5, 9, 13, 17];
+            
+            let extendedFingers = 0;
+            
+            for (let i = 1; i < fingerTips.length; i++) {
+                if (landmarks[fingerTips[i]].y < landmarks[fingerBases[i]].y) {
+                    extendedFingers++;
+                }
+            }
+            
+            if (extendedFingers === 0) return 'fist';
+            if (extendedFingers === 2) return 'peace';
+            if (extendedFingers >= 4) return 'open_palm';
             
             return 'unknown';
         }
 
-        // Обработка жестов[7]
-        function processGesture(gesture, landmarks, handedness) {
+        function checkVirtualButtonHover(landmarks) {
             const indexTip = landmarks[8];
-            const screenX = indexTip.x * window.innerWidth;
-            const screenY = indexTip.y * window.innerHeight;
-
-            switch (gesture) {
-                case 'closed':
-                    // Рисование сжатым кулаком
-                    if (handedness === 'Right') {
-                        drawOnCanvas(screenX, screenY, true);
-                    }
-                    break;
-                    
-                case 'point':
-                    // Курсор указательным пальцем
-                    updateCursor(screenX, screenY);
-                    break;
-                    
-                case 'pinch':
-                    // Выбор цвета щепоткой
-                    selectColorByPosition(screenX, screenY);
-                    break;
-                    
-                case 'open':
-                    // Стоп рисование открытой ладонью
-                    isDrawing = false;
-                    lastDrawPoint = null;
-                    break;
-            }
-        }
-
-        // Рисование на canvas
-        function drawOnCanvas(x, y, shouldDraw) {
-            if (shouldDraw && lastDrawPoint) {
-                drawingCtx.strokeStyle = currentColor;
-                drawingCtx.lineWidth = 5;
-                drawingCtx.lineCap = 'round';
-                drawingCtx.beginPath();
-                drawingCtx.moveTo(lastDrawPoint.x, lastDrawPoint.y);
-                drawingCtx.lineTo(x, y);
-                drawingCtx.stroke();
-            }
+            const x = indexTip.x * window.innerWidth;
+            const y = indexTip.y * window.innerHeight;
             
-            if (shouldDraw) {
-                lastDrawPoint = { x, y };
+            const btnRect = virtualBtn1.getBoundingClientRect();
+            
+            if (x >= btnRect.left && x <= btnRect.right && 
+                y >= btnRect.top && y <= btnRect.bottom) {
+                virtualBtn1.classList.add('hover');
+                virtualBtn1.textContent = 'Активировано!';
             } else {
-                lastDrawPoint = null;
+                virtualBtn1.classList.remove('hover');
+                virtualBtn1.textContent = 'Наведите руку';
             }
         }
 
-        // Обновление курсора
-        function updateCursor(x, y) {
-            // Создаем виртуальный курсор
-            let cursor = document.getElementById('virtualCursor');
-            if (!cursor) {
-                cursor = document.createElement('div');
-                cursor.id = 'virtualCursor';
-                cursor.style.cssText = `
-                    position: fixed;
-                    width: 20px;
-                    height: 20px;
-                    background: rgba(255, 255, 255, 0.8);
-                    border-radius: 50%;
-                    pointer-events: none;
-                    z-index: 9999;
-                    transform: translate(-50%, -50%);
-                    box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
-                `;
-                document.body.appendChild(cursor);
-            }
+        function createParticle(x, y) {
+            const particle = {
+                x: x,
+                y: y,
+                vx: (Math.random() - 0.5) * 2,
+                vy: (Math.random() - 0.5) * 2,
+                life: 1.0,
+                color: `hsl(${Math.random() * 60 + 200}, 100%, 70%)`
+            };
+            particles.push(particle);
+        }
+
+        function animateParticles() {
+            ctx3d.globalCompositeOperation = 'lighter';
             
-            cursor.style.left = x + 'px';
-            cursor.style.top = y + 'px';
-        }
-
-        // Выбор цвета по позиции
-        function selectColorByPosition(x, y) {
-            const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff'];
-            const colorIndex = Math.floor((x / window.innerWidth) * colors.length);
-            if (colors[colorIndex]) {
-                currentColor = colors[colorIndex];
-                console.log('Выбран цвет:', currentColor);
-            }
-        }
-
-        // Анимация Three.js
-        function animate() {
-            requestAnimationFrame(animate);
-            
-            // Добавляем плавное вращение рук
-            handMeshes.forEach((mesh, index) => {
-                if (mesh) {
-                    mesh.rotation.y += 0.005;
+            particles = particles.filter(particle => {
+                particle.x += particle.vx;
+                particle.y += particle.vy;
+                particle.life -= 0.02;
+                
+                if (particle.life > 0) {
+                    ctx3d.globalAlpha = particle.life;
+                    ctx3d.fillStyle = particle.color;
+                    ctx3d.beginPath();
+                    ctx3d.arc(particle.x, particle.y, 3 * particle.life, 0, Math.PI * 2);
+                    ctx3d.fill();
+                    return true;
                 }
+                return false;
             });
             
-            renderer.render(scene, new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000));
-        }
-
-        // Утилиты для управления
-        function setDrawColor(color) {
-            currentColor = color;
-        }
-
-        function clearCanvas() {
-            drawingCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
-        }
-
-        // Изменение размеров
-        function resizeCanvases() {
-            canvasElement.width = window.innerWidth;
-            canvasElement.height = window.innerHeight;
-            drawingCanvas.width = window.innerWidth;
-            drawingCanvas.height = window.innerHeight;
+            ctx3d.globalAlpha = 1;
+            ctx3d.globalCompositeOperation = 'source-over';
             
-            if (renderer) {
-                renderer.setSize(window.innerWidth, window.innerHeight);
-            }
+            requestAnimationFrame(animateParticles);
         }
 
-        // Инициализация
-        window.addEventListener('load', () => {
-            resizeCanvases();
-            initThreeJS();
-            initMediaPipe();
+        // Обработчики кнопок
+        document.getElementById('drawMode').addEventListener('click', () => {
+            currentMode = 'draw';
+            document.getElementById('drawMode').classList.add('active');
+            document.getElementById('gestureMode').classList.remove('active');
         });
 
-        window.addEventListener('resize', resizeCanvases);
+        document.getElementById('gestureMode').addEventListener('click', () => {
+            currentMode = 'gesture';
+            document.getElementById('gestureMode').classList.add('active');
+            document.getElementById('drawMode').classList.remove('active');
+        });
+
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            drawCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+        });
+
+        // Выбор цвета
+        document.querySelectorAll('.color-option').forEach(colorOption => {
+            colorOption.addEventListener('click', (e) => {
+                document.querySelectorAll('.color-option').forEach(opt => {
+                    opt.classList.remove('selected');
+                });
+                e.target.classList.add('selected');
+                currentColor = e.target.dataset.color;
+            });
+        });
+
+        // Запуск анимации частиц
+        animateParticles();
     </script>
 </body>
 </html>
